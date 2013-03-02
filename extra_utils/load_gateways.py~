@@ -1,0 +1,49 @@
+import datetime
+from hermes import models 
+from django.db import connection
+
+def insert_values(file_path):
+    cursor = connection.cursor()
+    fp = open(file_path)
+    line = fp.readline()
+    insert_str = "insert into hermes_gateway (description, lat, lng, gateway_id) values "        
+    values_str = '("%s","%s","%s","%s"),' 
+   
+    cnt = 0
+    values = ''
+    while line:
+        line = fp.readline()
+        if line:
+            cnt += 1
+            line = line.strip("\r\n").replace('"', '').split(",")
+            print line
+            values += values_str % (line[0], line[1], line[2], line[3])
+
+            if cnt >= 100:
+                try:
+                    cursor.execute(insert_str + values.rstrip(",")+";")
+                except Warning:
+                    pass
+                cnt = 0
+                values = ""
+        else:
+            try:
+                cursor.execute(insert_str + values.rstrip(",")+";")    
+            except Warning:
+                pass
+    cursor.close()
+    fp.close()
+    return
+
+
+
+if __name__=='__main__':
+    start = datetime.datetime.now()
+    insert_values("hermes/bin/gateways.txt")
+    print 'gateway inserts over'
+    end = datetime.datetime.now()
+    diff = end - start
+    print 'start: ', start, ', end: ', end
+    print 'stats, time took in - days: ', diff.days, ', seconds: ', diff.seconds, ', microseconds: ', diff.microseconds
+
+
