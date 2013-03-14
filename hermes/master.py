@@ -23,8 +23,8 @@ def clear_data():
     stops.delete()
     vehicles = models.FlexBus.objects.all()
     vehicles.delete()
-    gateways = models.Gateway.objects.all()
-    gateways.delete()
+    #gateways = models.Gateway.objects.all()
+    #gateways.delete()
 
 @log_traceback
 def create_gateways():
@@ -74,7 +74,7 @@ def initialize_simulation(request):
     print 'Clearing Data...'
     clear_data()
     print 'Creating Gateways...'
-    create_gateways()
+    #create_gateways()
     print 'Creating Subnets...'
     create_subnets()
     print 'Creating Busses...'

@@ -1,11 +1,12 @@
-import random, numpy, copy, urllib2, urllib, time, csv
+import random, numpy, copy, urllib2, urllib, time, csv, datetime
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils import simplejson
 from django.http import HttpResponse
 from extra_utils.variety_utils import log_traceback
 
-from hermes import models
-from hermes import utils
+from hermes import models, utils, planner_manager
+from NITS_CODE import settings
 
 #This bus speed is used for some very crude vehicle location estimation.  It is used as stop gap measure since I was violating the Google Maps API
 #TODO: Build an Open Source Routing Machine for Atlanta to hande vehicle routing issues
@@ -38,7 +39,7 @@ def route_planner(flexbus_start, flexbus_end, time):
     transit_time =  (float(transit_matrix[flexbus_start.subnet.gateway.gateway_id - 1][flexbus_end.subnet.gateway.gateway_id -1]) + 7.5)*60.0
     return transit_time, 0, 0
 
-def get_candidate_vehicles(passenger, second):
+def create_trips(passenger, second):
     """
     Takes in a passenger.  Determines which buses can handle that passenger's trip.
     Create the trips or trip segments for the passenger with the correctly assigned busses
@@ -46,23 +47,79 @@ def get_candidate_vehicles(passenger, second):
     @param second : the seconds count into the simulation
     """
 
-    # Get the busses for the passenger's starting subnet
-    start_bus, subnet = get_candidate_vehicles_from_point_radius(passenger.start_lat, passenger.start_lng)
-    # Get the busses for the passenger's ending subnet
-    end_bus, subnet = get_candidate_vehicles_from_point_radius(passenger.end_lat, passenger.end_lng)
-
-    #For the simplest version of the darp, there is only one bus in each subnet, select those busses
-    #TODO:  For other version, more than one bus may be returned.
-    start_bus = shortest_route_bus(subnet, start_bus, second)
-    end_bus = shortest_route_bus(subnet, end_bus, second)
-
-    #If the two busses are the same bus, this can be handled by one bus without fixed transit
-    if start_bus == end_bus:
-        models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = passenger.end_lat, start_lng = passenger.start_lng, end_lng = passenger.end_lng, status = 1, earliest_start_time = second, trip_sequence = 1)
-    #Else, two busses and trips will be required to handle this passenger.  Create those trips
+    if settings.USE_CIRCULAR_SUBNET:
+        # Get the busses for the passenger's starting subnet
+        start_buses = get_candidate_vehicles_from_point_radius(passenger.start_lat, passenger.start_lng)
+        # Get the busses for the passenger's ending subnet
+        end_buses = get_candidate_vehicles_from_point_radius(passenger.end_lat, passenger.end_lng)
+    elif settings.USE_ISOCHRONE_SUBNET:
+        # Get the busses for the passenger's starting subnet
+        start_buses = get_candidate_vehicles_from_point_geofence(passenger.start_lat, passenger.start_lng)
+        # Get the busses for the passenger's ending subnet
+        end_buses = get_candidate_vehicles_from_point_geofence(passenger.end_lat, passenger.end_lng)
     else:
-        models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = start_bus.subnet.gateway.lat, start_lng = passenger.start_lng, end_lng = start_bus.subnet.gateway.lng, status = 1, earliest_start_time = second, trip_sequence = 1)
+        print 'NO SUBNET TYPE IS CHOSEN!!!! ERROR ERROR ERROR!!!!!'
+        return
+
+    if not start_buses and not end_buses: #This is a fully static trip
+        create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 0, earliest_start_time = second)
+    elif start_buses and (not end_buses): #The first leg is DRT, the rest of the trip is Static
+        start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses = start_buses, end_buses = None)
+        create_static_trip(passenger, [start_bus.subnet.gateway.lat, start_bus.subnet.gateway.lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 1)
+    elif (not start_buses) and end_buses: #The final leg is DRT, the first portion is Static
+        start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses = None, end_buses = end_buses)
+        create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [end_bus.subnet.gateway.lat, end_bus.subnet.gateway.lng], trip_sequence = 0, earliest_start_time = second)       
+    else: #Both legs are DRT.
+        start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses, end_buses)
+        create_static_trip(passenger, [start_bus.subnet.gateway.lat, start_bus.subnet.gateway.lng], [end_bus.subnet.gateway.lat, end_bus.subnet.gateway.lng], trip_sequence = 1)
+    return
+
+def create_dynamic_trip(passenger, second, start_buses = None, end_buses = None):
+    """
+    Creates DRT trips.
+    @param passenger : passenger object 
+    @param buses : array of potential buses
+    @param next_leg__buses : array of potential end_buses (optional) It's included to take into account the chance that a single vehicle can handle both trips.
+    TODO: Consider the situation where a single vehicle can handle the entire trip
+    TODO: Find a way to not assign a bus to trips that are not ready to start yet.
+    """
+    start_bus = None
+    end_bus = None
+    if start_buses:
+        start_bus = which_bus(start_buses, passenger, second)
+    if end_buses:
+        end_bus = which_bus(end_buses, passenger, second)
+    if not start_buses and not end_buses:
+        return start_bus, end_bus
+
+    if start_bus == end_bus:
+        #If the two busses are the same bus, this can be handled by one bus without fixed transit
+        #TODO: Try to make this happen if possible, instead of only checking to see if the same bus was chosen by accident
+        models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = passenger.end_lat, start_lng = passenger.start_lng, end_lng = passenger.end_lng, status = 1, earliest_start_time = second, trip_sequence = 0)
+    elif start_buses and end_buses:
+        models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = start_bus.subnet.gateway.lat, start_lng = passenger.start_lng, end_lng = start_bus.subnet.gateway.lng, status = 1, earliest_start_time = second, trip_sequence = 0)
         models.TripSegment.objects.create(passenger = passenger, flexbus = end_bus, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = 2)
+    elif start_buses and (not end_buses):
+        models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = start_bus.subnet.gateway.lat, start_lng = passenger.start_lng, end_lng = start_bus.subnet.gateway.lng, status = 1, earliest_start_time = second, trip_sequence = 0)
+    elif (not start_buses) and end_buses:
+        models.TripSegment.objects.create(passenger = passenger, flexbus = end_bus, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = 1)
+
+    return start_bus, end_bus
+
+def create_static_trip(passenger, start_loc, end_loc, trip_sequence, earliest_start_time = None):
+    """
+    Given a passenger object, create a static trip for that object.  Do not yet fill in the times, simply create the object.
+    @param passenger : a passenger object
+    @param earliest_start_time : time in seconds
+    @param start_loc : a tuple of the form [start_lat, start_lng]
+    @param end_loc : a tuple of the form [end_lat, end_lng]
+    @param trip_sequence : the sequence of the trip.  In a typical NITS trip with both a first and last mile DRT trip, the trip sequence will be 1.  0 = first leg, 1 = second leg, 2 = third leg.
+    """
+    static_trip = models.TripSegment.objects.create(passenger = passenger, earliest_start_time = earliest_start_time, start_lat = start_loc[0], start_lng = start_loc[1], end_lat = end_loc[0], end_lng = end_loc[1], status = 1, trip_sequence = trip_sequence, static = 1)
+
+    static_trip.save()
+    return
+    
 
 def insert_trip(second, trip_segment):
     """
@@ -75,11 +132,11 @@ def insert_trip(second, trip_segment):
     #return ga_optimize_route(second, trip_segment.flexbus)
     #return heuristic_optimize_route(second, trip_segment.flexbus)
 
-def shortest_route_bus(closest_subnet, busses, second):
+def which_bus(busses, passenger, second):
     """
     Takes in a query of buses and determines which one will be finished with its route first.
     If no routes are finished within 30 minutes.  A new bus is dispatched.
-    @param closest_subnet : the subnet to create a new bus if needed
+    TODO: We should make this a smarter algorithm.  Do not simply put the passenger on the bus with the least burden.  This does not take into account the locatino of the passenger.
     @busses : a query of flexbus objects
     @second : the seconds into the simulation
     @return : the bus with the shortest total trip
@@ -112,8 +169,8 @@ def shortest_route_bus(closest_subnet, busses, second):
         id = vehicles.count() + 1
         if len(busses) > 0:
             flexbus, created = models.FlexBus.objects.get_or_create(vehicle_id = id, subnet = bus.subnet)
-        else:
-            flexbus, created = models.FlexBus.objects.get_or_create(vehicle_id = id, subnet = closest_subnet) 
+        else: #TODO, this simply assigns the passenger to the subnet of the last bus in the queue, not necessariliy the best
+            flexbus, created = models.FlexBus.objects.get_or_create(vehicle_id = id, subnet = bus.subnet)
         return flexbus
     else:
         return min_bus
@@ -122,6 +179,7 @@ def shortest_route_bus(closest_subnet, busses, second):
 def get_candidate_vehicles_from_point_geofence(lat, lng):
     """
     This function takes in a point and returns the vehicles for every subnet geofence that this point lies within.  This is the set of vehicles that the passenger is eligible for. 
+    TODO: If a subnet exists, but no buses are assigned to it.  This logic will not work.  consider revising.
     TODO:  In the future, gather any vehicles from subnets that touch any eligible subnet subnet.  This will allow for vehicles to travel between adjacent subnets.
     """
     subnets_in_range = []
@@ -139,7 +197,6 @@ def get_candidate_vehicles_from_point_geofence(lat, lng):
         for sv in subnet_vehicles:
             vehicles.append(sv)
 
-    print vehicles
     return vehicles
         
 
@@ -178,7 +235,7 @@ def get_candidate_vehicles_from_point_radius(lat, lng):
     """
     #For the simplest case, there is one bus per subnet.
     subnets = models.Subnet.objects.all()
-    min_dist = 1800 #1.8 km
+    min_dist = settings.CIRCULAR_SUBNET_RADIUS 
     min_subnet = None
     closest_dist = float('inf')
     closest_subnet = None
@@ -197,7 +254,7 @@ def get_candidate_vehicles_from_point_radius(lat, lng):
         for sv in subnet_vehicles:
             vehicles.append(sv)
 
-    return vehicles, closest_subnet
+    return vehicles
 
 
 def randperm(n):
@@ -247,17 +304,16 @@ def get_distance_from_array(lats, lngs):
 
 def update_next_segment(trip):
     """
-    For each passenger there are two flexbus trips.  The first trip carries the passenger from his start location to the rail station, the next flexbus trip carries the passenger from his destination rail station to his final destinaion.  When the first flexbus trip is created or altered the second leg must be updated as well to take into account the flexbus travel time and the fixed route travel time.
+    When a trip segment has been assigned an end_time, this functino is called to alert the next trip_segment to when it can begin
     @param trip : the first leg of a passenger's trip
     """
     try:
-        next_trip = models.TripSegment.objects.get(passenger = trip.passenger, trip_sequence = trip.trip_sequence+1)
-    except: #bjectdoesnotexist
+        next_trip = models.TripSegment.objects.get(passenger = trip.passenger, trip_sequence = trip.trip_sequence + 1)
+    except ObjectDoesNotExist:
         return
-
-    #TODO: this should be updated to handle a GTFS-based planner
-    transit_time, rail1, rail2 = route_planner(trip.flexbus, next_trip.flexbus, trip.end_time)
-    next_trip.earliest_start_time = transit_time + trip.end_time
+    
+    next_trip.earliest_start_time = trip.end_time + 1 #the static trip can start 1 second after the dynamic trip ends
+    
     next_trip.save()
 
 def assign_time(trip, time, mode):
@@ -356,7 +412,7 @@ def get_cost(flexbus_lat, flexbus_lng, second, sequence, locations, new_trips, u
     for index in range(len(sequence)):
         stop = sequence[index]
         stop_order.append(locations[stop])
-        if index:
+        if index: #TODO  Improve this bad approximation of bus speed
             previous_stop = sequence[index - 1]
             travel_time = utils.haversine_dist([locations[stop][0], locations[stop][1]], [locations[previous_stop][0], locations[previous_stop][1]])*(1/speed)
         else:
@@ -489,7 +545,7 @@ def convert_sequence_to_locations(flexbus, second, sequence, locations, new_trip
     return stop_order
 
 
-def simple_convert_sequence_to_locations(flexbus, second, stop_array):#, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count):
+def simple_convert_sequence_to_locations(flexbus, second, stop_array):
     """
     This function converts sequences to physical locations and is meant to be used with the simple hueristic method.
     Convert a sequence of stops into the stop lat,lngs
@@ -524,19 +580,17 @@ def simple_convert_sequence_to_locations(flexbus, second, stop_array):#, new_tri
                      
         sim_time += travel_time
 
-        #1 = assign start_time
-        #2 = assign end_time 
-
-        #P/U time of new trips:
-        assign_time(stop_array[index + 1].trip, sim_time, stop_array[index + 1].type)
-        update_next_segment(stop_array[index + 1])
+        #Update the times for the trips that these stops represent
+        if stop_array[index + 1].trip: #if this stop is for a trip and not an intermediate stop, update this trip and the next trip
+            assign_time(stop_array[index + 1].trip, sim_time, stop_array[index + 1].type)
+            update_next_segment(stop_array[index + 1].trip)
 
     #Add a stoptime for returning to the gateway
     travel_time = utils.get_google_distance(flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng, stop_array[len(stop_array) - 1].lat, stop_array[len(stop_array) - 1].lng)
     flexbus_stop = models.Stop.objects.create(flexbus = flexbus, lat = flexbus.subnet.gateway.lat, lng = flexbus.subnet.gateway.lng, sequence = sequence, visit_time = sim_time + travel_time)
 
     for stop in stop_array:
-      print str(stop.lat) + ',' + str(stop.lng)
+        print str(stop.lat) + ',' + str(stop.lng)
 
     return stop_array
 
@@ -690,6 +744,38 @@ def ga_optimize_route(second, flexbus):
         
     return flexbus, opt_rte, locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count
 
+def optimize_static_route(second, trip_segment):
+    """
+    This function takes in a static trip_segment and a time then finds an optimal static itinerary for that trip.
+    The various trip times are updated for this itinerary and the next trip segment is updated to reflect thetime that this trip will be over
+    @param second : seconds into the simulation
+    @param trip_segment : a TripSegment object for a static trip
+    """
+    if not trip_segment.static:
+        print 'ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR'
+
+    current_time = second + settings.SIMULATION_START_TIME
+    hour = int(current_time/3600)
+    minute = int((current_time - (hour*3600))/60)
+    second = current_time - (minute*60) - (hour*3600)
+
+    trip_time = datetime.datetime(year = settings.SIMULATION_START_YEAR, month = settings.SIMULATION_START_MONTH, day = settings.SIMULATION_START_DAY, hour = hour, minute = minute, second = second)
+    walking_time, waiting_time, riding_time = planner_manager.get_transit_distance_and_time([trip_segment.start_lat, trip_segment.start_lng], [trip_segment.end_lat, trip_segment.end_lng], trip_time)
+
+    total_time = walking_time + waiting_time + riding_time
+
+    trip_segment.status = 2
+    trip_segment.start_time = second
+    trip_segment.end_time = second + total_time
+    trip_segment.walking_time = walking_time
+    trip_segment.waiting_time = waiting_time
+    trip_segment.riding_time = riding_time
+    trip_segment.save()
+
+    update_next_segment(trip_segment)
+    
+    return
+    
 def simple_optimize_route(second, trip, flexbus):
     """
     Simple Heuristic Algorithm Optimization Routine

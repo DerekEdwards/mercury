@@ -20,12 +20,12 @@ def get_transit_distance_and_time(toLocation, fromLocation, requestTime=None):
     month = str(requestTime.month)
     day = str(requestTime.day)
     year = str(requestTime.year)
-
-    contents = urllib2.Request(OTP_SERVER_URL + "plan?_dc=1332792677563&arriveBy=false&mode=TRANSIT,WALK&optimize=QUICK&routerId=&toPlace=" + str(toLocation[0]) + "%2C" + str(toLocation[1]) + "&fromPlace=" + str(fromLocation[0]) + "%2C" + str(fromLocation[1]) + '&time=' + hour +':' + minute + ':' + second + '&date=' + month + '/' + day + '/' + year, headers={"Accept" : "application/json"})
+    
+    URL_STRING = OTP_SERVER_URL + "plan?_dc=1332792677563&arriveBy=false&mode=TRANSIT,WALK&optimize=QUICK&routerId=&toPlace=" + str(toLocation[0]) + "%2C" + str(toLocation[1]) + "&fromPlace=" + str(fromLocation[0]) + "%2C" + str(fromLocation[1]) + '&time=' + hour +':' + minute + ':' + second + '&date=' + month + '/' + day + '/' + year
+    contents = urllib2.Request(URL_STRING, headers={"Accept" : "application/json"})
     response = urllib2.urlopen(contents)
     json_response = json.loads(response.read())
     plan =  json_response['plan']
-
     if not plan == None:
         itineraries = plan['itineraries']
         itinerary = itineraries[0]
@@ -37,6 +37,18 @@ def get_transit_distance_and_time(toLocation, fromLocation, requestTime=None):
         initialWait = startTime/1000 - time.mktime(requestTime.timetuple())
         waitingTime = itinerary['waitingTime']
         realWait = int(waitingTime + initialWait)
+        #return walk, wait, ride times
         return itinerary['walkTime'], realWait, itinerary['transitTime']
     else:
+        error = json_response['error']
+        msg = error['msg']
+        if msg == 'Origin is within a trivial distance of the destination.':
+            return 0,0,0
+        print 'OPEN TRIP PLANNER FAILED TO FIND A TRIP'
+        print 'Starting ' + str(toLocation[0]) + ',' + str(toLocation[1])
+        print 'Ending ' + str(fromLocation[0]) + ',' + str(fromLocation[1])
+        print URL_STRING
+        print error
+        return 0,0,0
+        #TODO: Handle errors from OTP properly
         return None, None, None

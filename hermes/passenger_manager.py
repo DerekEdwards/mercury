@@ -46,7 +46,7 @@ def get_survey_passengers(request):
             ###########################
             ## Create Trips for these passengers
             ###########################
-            views.get_candidate_vehicles(new_passenger, second)
+            views.create_trips(new_passenger, second)
 
     ### Check to see if trips are ready to be inserted.  Any passengers created above will have trips here
     ### This will also pull trips that were created earlier but weren't ready to be inserted

@@ -121,6 +121,8 @@ class TripSegment(models.Model):
     """
     Each Passenger's trip may be divided into multiple segments.  These objects represent those segments
     passenger:  ForeignKey to the passenger to whom this tripsegment belongs
+
+    static : booleanfield, if it is set to true this is a static trip segment, otherwise it is DRT
     flexbus:  ForeignKey to the flexbus serving this tripsegment
 
     start_time: the time the trip_segment started or is scheduled to start
@@ -133,10 +135,12 @@ class TripSegment(models.Model):
     trip_sequence: The order that these trips are visited.  0 is first leg, 1 is second leg, 2 is third leg. For the simple city, there will only be at most two legs
     """
     passenger = models.ForeignKey(Passenger, null = False)
+
+    static = models.BooleanField(null = False, default = False)
     flexbus = models.ForeignKey(FlexBus, null = True)
 
     start_time = models.IntegerField(null = True)
-    end_time = models.IntegerField(null = False, default = 1000000) #TODO: Set this to double the length of the simulation or fin da better solution
+    end_time = models.IntegerField(null = False, default = 1000000) #TODO: Set this to double the length of the simulation or find a better solution
     
     #Earliest start time is the earliest time this tripsegment can begin
     #the time is measured in seconds from the simulation start time
@@ -153,7 +157,12 @@ class TripSegment(models.Model):
 
     end_lat = models.FloatField(null = False)
     end_lng = models.FloatField(null = False)
-    
+  
+    #These are for book-keeping purposes.  All times are in seconds.
+    walking_time = models.IntegerField(null = True)
+    waiting_time = models.IntegerField(null = True)
+    riding_time = models.IntegerField(null = True)
+      
     trip_sequence = models.IntegerField(null = False, default = 0)
 
 class Stop(models.Model):
