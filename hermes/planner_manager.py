@@ -42,13 +42,15 @@ def get_transit_distance_and_time(toLocation, fromLocation, requestTime=None):
     else:
         error = json_response['error']
         msg = error['msg']
-        if msg == 'Origin is within a trivial distance of the destination.':
-            return 0,0,0
+        if 'Origin is within a trivial distance of the destination.' in msg:
+            return 1,0,0 #This is a very short walking trip
+        elif 'Your start or end point might not be safely accessible' in msg:
+            #In OTP, if a trip starts or ends in the middle of a highway or some inaccessible place, the above error is thrown.  To get around this.  I will slightly adjust the start and end location by a couple of hundred feet, until a safe route is found.
+            print 'Adjusting Start/End Location to make trip safer'
+            return get_transit_distance_and_time([toLocation[0] + .001, toLocation[1]], [fromLocation[0] + .001, fromLocation[1]], requestTime)
         print 'OPEN TRIP PLANNER FAILED TO FIND A TRIP'
         print 'Starting ' + str(toLocation[0]) + ',' + str(toLocation[1])
         print 'Ending ' + str(fromLocation[0]) + ',' + str(fromLocation[1])
         print URL_STRING
         print error
-        return 0,0,0
-        #TODO: Handle errors from OTP properly
         return None, None, None
