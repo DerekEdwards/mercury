@@ -21,7 +21,7 @@ def get_transit_distance_and_time(toLocation, fromLocation, requestTime=None):
     day = str(requestTime.day)
     year = str(requestTime.year)
     
-    URL_STRING = OTP_SERVER_URL + "plan?_dc=1332792677563&arriveBy=false&mode=TRANSIT,WALK&optimize=QUICK&routerId=&toPlace=" + str(toLocation[0]) + "%2C" + str(toLocation[1]) + "&fromPlace=" + str(fromLocation[0]) + "%2C" + str(fromLocation[1]) + '&time=' + hour +':' + minute + ':' + second + '&date=' + month + '/' + day + '/' + year
+    URL_STRING = OTP_SERVER_URL + "opentripplanner-api-webapp/ws/plan?_dc=1332792677563&arriveBy=false&mode=TRANSIT,WALK&optimize=QUICK&routerId=&toPlace=" + str(toLocation[0]) + "%2C" + str(toLocation[1]) + "&fromPlace=" + str(fromLocation[0]) + "%2C" + str(fromLocation[1]) + '&time=' + hour +':' + minute + ':' + second + '&date=' + month + '/' + day + '/' + year
     contents = urllib2.Request(URL_STRING, headers={"Accept" : "application/json"})
     response = urllib2.urlopen(contents)
     json_response = json.loads(response.read())
