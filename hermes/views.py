@@ -760,7 +760,7 @@ def optimize_static_route(second, trip_segment):
     second = current_time - (minute*60) - (hour*3600)
 
     trip_time = datetime.datetime(year = settings.SIMULATION_START_YEAR, month = settings.SIMULATION_START_MONTH, day = settings.SIMULATION_START_DAY, hour = hour, minute = minute, second = second)
-    walking_time, waiting_time, riding_time = planner_manager.get_transit_distance_and_time([trip_segment.start_lat, trip_segment.start_lng], [trip_segment.end_lat, trip_segment.end_lng], trip_time)
+    walking_time, waiting_time, riding_time = planner_manager.get_optimal_transit_times([trip_segment.start_lat, trip_segment.start_lng], [trip_segment.end_lat, trip_segment.end_lng], trip_time)
 
     total_time = walking_time + waiting_time + riding_time
 
