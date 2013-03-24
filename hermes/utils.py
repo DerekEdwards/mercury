@@ -1,29 +1,32 @@
-from hermes import models
-from math import sin, cos, pi, atan2, sqrt
-#from googlemaps import GoogleMaps
+import math
 import time
 
-#gmaps = GoogleMaps('ABQIAAAAsn6aAGbw79H9E1JOWbQQjhSlVGwKjeu8iET79lxLMDKkElrCQBTD0ANguvwut7gCuc8I7Es8GyfDiQ')
-EARTH_RADIUS = 6371000 #in meters
+from hermes import models
 
-
+EARTH_RADIUS = 6372800 #in meters
 def haversine_dist(start, end):
     """
-    Finds the straight line distance between two points in meters. 
+    The code for this function was taken from http://rosettacode.org/wiki/Haversine_formula on March 24, 2013
+    ---------------
+    This function returns the straight line distane between two lat,lng points.
+    @param start : [start lat, start lng]
+    @param end : [end lat, end lng]
+    @returns : the distance between these two points given in meters
     """
-    dlat = to_rad(end[0] - start[0])
-    dlon = to_rad(end[1] - start[1])
-
-    tmp_dist = sin(dlat/2)*sin(dlat/2) + cos(to_rad(start[0]))*cos(to_rad(end[1]))*sin(dlon/2)*sin(dlon/2)
-    tmp_dist = 2*atan2(sqrt(tmp_dist), sqrt(1-tmp_dist))
-    tmp_dist *= EARTH_RADIUS
-    return tmp_dist
-
-def to_rad(deg):
-    return deg*pi/180
-
-def to_deg(rad):
-    return rad*180/pi
+    
+    lat1 = start[0]
+    lon1= start[1]
+    lat2 = end[0]
+    lon2 = end[1]
+    
+    dLat = math.radians(lat2 - lat1)
+    dLon = math.radians(lon2 - lon1)
+    lat1 = math.radians(lat1)
+    lat2 = math.radians(lat2)
+ 
+    a = math.sin(dLat / 2) * math.sin(dLat / 2) + math.sin(dLon / 2) * math.sin(dLon / 2) * math.cos(lat1) * math.cos(lat2)
+    c = 2 * math.asin(math.sqrt(a))
+    return EARTH_RADIUS * c
 
 def get_google_distance(lat1, lng1, lat2, lng2):
     
@@ -39,3 +42,12 @@ def get_google_distance(lat1, lng1, lat2, lng2):
             total_seconds += float( step['Duration']['seconds'])
 
     return total_seconds
+
+def get_shape_distance(shapes):
+    """
+    Given an array of lat, lngs, return the total length of the array
+    @param shapes : array of shape points
+    @return : float representing the length of the shape in meters 
+    """
+    return 0
+    
