@@ -371,6 +371,12 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
     if last_stop_time == second:
         return last_stop_lat, last_stop_lng, 0
 
+
+    ## If we made it this far, that means that the vehicle is between two stops.  This is the most likely scenario.
+    percent_complete = float(second - last_stop_time)/(next_stop.visit_time - last_stop_time) 
+
+    geometry, distance, time = planner_manager.get_optimal_vehicle_itinerary([next_stop.lat, next_stop.lng], [last_stop.lat, last_stop.lng])
+    
     dist_between_lats = next_stop.lat - last_stop_lat
     dist_between_lngs = next_stop.lng - last_stop_lng
 
@@ -379,7 +385,6 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
     if (abs(dist_between_lngs) + abs(dist_between_lats)) == 0:
         return last_stop_lat, last_stop_lng, 0
 
-    percent_complete = float(second - last_stop_time)/(next_stop.visit_time - last_stop_time) 
 
     return_lat = (next_stop.lat - last_stop_lat)*percent_complete + last_stop_lat
     return_lng = (next_stop.lng - last_stop_lng)*percent_complete + last_stop_lng
