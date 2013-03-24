@@ -1,7 +1,11 @@
 import urllib2, json
 import datetime, time
+
+from extra_utils.variety_utils import log_traceback
+
 from NITS_CODE import settings
 
+@log_traceback
 def get_optimal_transit_times(toLocation, fromLocation, requestTime=None):
     """
     This function gets an optimal open trip planner itinerary given a starting and ending location and start time. The walking, waiting, and riding times for that trip are returned.
@@ -55,6 +59,7 @@ def get_optimal_transit_times(toLocation, fromLocation, requestTime=None):
         print error
         return None, None, None
 
+@log_traceback
 def get_optimal_vehicle_itinerary(toLocation, fromLocation):
     """
     This function takes in a fromLocation and toLocation in the form of [lat, lng] and returns a vehicle shape, distance (meters), and travel time (seconds) calculated from Open Source Routing Machine.  The shape string is a Google Polyline, information on this polyline can be found at https://developers.google.com/maps/documentation/utilities/polylinealgorithm.
@@ -73,3 +78,62 @@ def get_optimal_vehicle_itinerary(toLocation, fromLocation):
     total_time = json_response['route_summary']['total_time']
     
     return route_geometry, total_distance, total_time
+
+@log_traceback
+def decode_line(encoded):
+    """
+    Decodes a polyline that was encoded using the Google Maps method.
+
+    See http://code.google.com/apis/maps/documentation/polylinealgorithm.html
+    
+    This is a straightforward Python port of Mark McClure's JavaScript polyline decoder
+    (http://facstaff.unca.edu/mcmcclur/GoogleMaps/EncodePolyline/decode.js)
+    and Peter Chng's PHP polyline decode
+    (http://unitstep.net/blog/2008/08/02/decoding-google-maps-encoded-polylines-using-php/)
+    
+    ------------------------
+    This Code was imported from http://seewah.blogspot.com/2009/11/gpolyline-decoding-in-python.html on March 24, 2013.
+    @input encoded : a string representing an encoded GMaps Polyline 
+    @return : an array of lat,lngs
+    """
+
+    encoded_len = len(encoded)
+    index = 0
+    array = []
+    lat = 0
+    lng = 0
+
+    while index < encoded_len:
+
+        b = 0
+        shift = 0
+        result = 0
+
+        while True:
+            b = ord(encoded[index]) - 63
+            index = index + 1
+            result |= (b & 0x1f) << shift
+            shift += 5
+            if b < 0x20:
+                break
+
+        dlat = ~(result >> 1) if result & 1 else result >> 1
+        lat += dlat
+
+        shift = 0
+        result = 0
+
+        while True:
+            b = ord(encoded[index]) - 63
+            index = index + 1
+            result |= (b & 0x1f) << shift
+            shift += 5
+            if b < 0x20:
+                break
+
+        dlng = ~(result >> 1) if result & 1 else result >> 1
+        lng += dlng
+
+        array.append((lat * 1e-5, lng * 1e-5))
+
+    return array
