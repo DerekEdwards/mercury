@@ -49,5 +49,15 @@ def get_shape_distance(shapes):
     @param shapes : array of shape points
     @return : float representing the length of the shape in meters 
     """
-    return 0
+    total_dist = 0.0
+    first_shape = True    
+    for shape in shapes:
+        if first_shape:
+            first_shape = False
+            previous_shape = shape
+        else:
+            total_dist += haversine_dist([previous_shape[0], previous_shape[1]], [shape[0], shape[1]])
+            previous_shape = shape
+
+    return total_dist
     

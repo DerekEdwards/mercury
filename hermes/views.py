@@ -26,6 +26,7 @@ for row in transit_reader:
     transit_row = []
 #############################################
 
+@log_traceback
 def route_planner(flexbus_start, flexbus_end, time):
     """
     route_planner finds the time that it takes to travel between two subnets via fixed route transit
@@ -39,6 +40,7 @@ def route_planner(flexbus_start, flexbus_end, time):
     transit_time =  (float(transit_matrix[flexbus_start.subnet.gateway.gateway_id - 1][flexbus_end.subnet.gateway.gateway_id -1]) + 7.5)*60.0
     return transit_time, 0, 0
 
+@log_traceback
 def create_trips(passenger, second):
     """
     Takes in a passenger.  Determines which buses can handle that passenger's trip.
@@ -74,6 +76,7 @@ def create_trips(passenger, second):
         create_static_trip(passenger, [start_bus.subnet.gateway.lat, start_bus.subnet.gateway.lng], [end_bus.subnet.gateway.lat, end_bus.subnet.gateway.lng], trip_sequence = 1)
     return
 
+@log_traceback
 def create_dynamic_trip(passenger, second, start_buses = None, end_buses = None):
     """
     Creates DRT trips.
@@ -106,6 +109,7 @@ def create_dynamic_trip(passenger, second, start_buses = None, end_buses = None)
 
     return start_bus, end_bus
 
+@log_traceback
 def create_static_trip(passenger, start_loc, end_loc, trip_sequence, earliest_start_time = None):
     """
     Given a passenger object, create a static trip for that object.  Do not yet fill in the times, simply create the object.
@@ -120,7 +124,7 @@ def create_static_trip(passenger, start_loc, end_loc, trip_sequence, earliest_st
     static_trip.save()
     return
     
-
+@log_traceback
 def insert_trip(second, trip_segment):
     """
     Takes in a trip, selects the current optimization scheme and passes that vehicle along for route optimization
@@ -132,6 +136,7 @@ def insert_trip(second, trip_segment):
     #return ga_optimize_route(second, trip_segment.flexbus)
     #return heuristic_optimize_route(second, trip_segment.flexbus)
 
+@log_traceback
 def which_bus(busses, passenger, second):
     """
     Takes in a query of buses and determines which one will be finished with its route first.
@@ -225,6 +230,7 @@ def point_within_geofence(lat, lng, sides):
     
     return pointStatus
 
+@log_traceback
 def get_candidate_vehicles_from_point_radius(lat, lng):
     """
     Take in a point, and determine which buses can visit this point.  Return those busses
@@ -256,7 +262,7 @@ def get_candidate_vehicles_from_point_radius(lat, lng):
 
     return vehicles
 
-
+@log_traceback
 def randperm(n):
     """
     create a random permutation of n integers in the range of n
@@ -268,7 +274,7 @@ def randperm(n):
     random.shuffle(t)
     return t
 
-
+@log_traceback
 def fix_order(V, full_trips_count):
     """
     This is what separates DARP from TSP
@@ -288,6 +294,7 @@ def fix_order(V, full_trips_count):
 
     return V
 
+@log_traceback
 def get_distance_from_array(lats, lngs):
     """
     Given an array of lats and an array of lngs, find the total distance to travel the path
@@ -301,7 +308,7 @@ def get_distance_from_array(lats, lngs):
 
     return distance
   
-
+@log_traceback
 def update_next_segment(trip):
     """
     When a trip segment has been assigned an end_time, this functino is called to alert the next trip_segment to when it can begin
@@ -316,6 +323,7 @@ def update_next_segment(trip):
     
     next_trip.save()
 
+@log_traceback
 def assign_time(trip, time, mode):
     """
     Save trip start and end times
@@ -334,6 +342,7 @@ def assign_time(trip, time, mode):
         trip.save()
     return
 
+@log_traceback
 def get_flexbus_location(flexbus, second, flexbus_stops = None):
     """
     Given a flexbus, the current time, and an optional list of stops, this function returns the location of the bus at the given time.
@@ -346,7 +355,6 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
     @param flexbus_stops : optional paramter that prevents us from having to requery the bus' stops
     @return a triple representing the lat and lng of the vehicles as well as what percentage of the trip the bus has completed between he previous and next stops
     """
-     
     if flexbus_stops == None:
         flexbus_stops = models.Stop.objects.filter(flexbus = flexbus).order_by('sequence')
 
@@ -358,6 +366,7 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
         return flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng, 0
 
     last_stop = flexbus_stops.filter(visit_time__lte = second)
+    
     if last_stop.count():
         last_stop = last_stop[last_stop.count() - 1]
         last_stop_lat = last_stop.lat
@@ -373,25 +382,56 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
 
 
     ## If we made it this far, that means that the vehicle is between two stops.  This is the most likely scenario.
-    percent_complete = float(second - last_stop_time)/(next_stop.visit_time - last_stop_time) 
+    percent_complete = float(second - last_stop_time)/float(next_stop.visit_time - last_stop_time) 
 
-    geometry, distance, time = planner_manager.get_optimal_vehicle_itinerary([next_stop.lat, next_stop.lng], [last_stop.lat, last_stop.lng])
+    geometry, distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([next_stop.lat, next_stop.lng], [last_stop.lat, last_stop.lng])
+    points = planner_manager.decode_line(geometry)
+
+    #This assumes that the travel speed is constant between these two points.  It obviously is not, but on the average this will be the case.
+    #TODO:  look for a solution that does not assume a constant speed between points.  
+    approx_distance = distance*percent_complete
+
+    total_distance = 0
+    first_time = True
+    for point in points:
+        if first_time:
+            first_time = False
+            last_point = point
+            if total_distance >= approx_distance:
+                flexbus_location = point
+                break
+        else:
+            leg_distance = utils.haversine_dist([last_point[0], last_point[1]], [point[0], point[1]])
+            previous_distance = total_distance
+            total_distance += leg_distance
+            if total_distance >= approx_distance:
+                flexbus_location = get_intermediate_point(last_point, point, approx_distance, previous_distance, total_distance)
+                break
+            else:
+                last_point = point
     
-    dist_between_lats = next_stop.lat - last_stop_lat
-    dist_between_lngs = next_stop.lng - last_stop_lng
+    return flexbus_location[0], flexbus_location[1], 0
 
-    #TODO:  BIG NECESSARY CHANGE HERE, This needs to be changed to handle Open Source Routing Machine directions
-    #The next and current stops are the same:
-    if (abs(dist_between_lngs) + abs(dist_between_lats)) == 0:
-        return last_stop_lat, last_stop_lng, 0
-
-
-    return_lat = (next_stop.lat - last_stop_lat)*percent_complete + last_stop_lat
-    return_lng = (next_stop.lng - last_stop_lng)*percent_complete + last_stop_lng
+@log_traceback
+def get_intermediate_point(last_point, next_point, current_distance, last_distance, next_distance):
+    """
+    This function is used to find the location of a flexbus.  Given the prevoius point along a shape, the next point along the shape, the shape_dist_traveled of both shapes and the shape_dist_traveled of the flexbus' current location, return the lat,lng of the flexbus
+    @param last_point : [lat, lng] of the previous point along the shape
+    @param next_point : [lat, lng] of the next point along the shape
+    @param current_distance : the shape_dist_traveled of the current location of the flexbus
+    @param last_distance : the shape_dist_traveled of the previous point along the shape
+    @param next_distance : the shape_dist_traveled of the next point along the shape
+    @return : [lat, lng] of the flexbus' location
+    """
+    percent_between_points = float(current_distance - last_distance)/float(next_distance - last_distance)
     
-    return return_lat, return_lng, 0
+    lat = percent_between_points*(next_point[0] - last_point[0]) + last_point[0]
+    lng = percent_between_points*(next_point[1] - last_point[1]) + last_point[1]
+
+    return [lat,lng]
 
 
+@log_traceback
 def get_cost(flexbus_lat, flexbus_lng, second, sequence, locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count):
     """
     given a vehicles location a set of trips and sequences, calculate the cost of visiting the locations
@@ -455,6 +495,7 @@ def get_cost(flexbus_lat, flexbus_lng, second, sequence, locations, new_trips, u
     cost = sum(new_trips_cost) + sum(unstarted_trips_cost) + sum(started_trips_cost)
     return cost
 
+@log_traceback
 def convert_sequence_to_locations(flexbus, second, sequence, locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count):
     """
     Convert a sequence of stops into the stop lat,lngs
@@ -549,7 +590,7 @@ def convert_sequence_to_locations(flexbus, second, sequence, locations, new_trip
 
     return stop_order
 
-
+@log_traceback
 def simple_convert_sequence_to_locations(flexbus, second, stop_array):
     """
     This function converts sequences to physical locations and is meant to be used with the simple hueristic method.
@@ -599,7 +640,7 @@ def simple_convert_sequence_to_locations(flexbus, second, stop_array):
 
     return stop_array
 
-
+@log_traceback
 def ga_optimize_route(second, flexbus):
     """
     Genetic Algorithm Optimization Routine
@@ -749,6 +790,7 @@ def ga_optimize_route(second, flexbus):
         
     return flexbus, opt_rte, locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count
 
+@log_traceback
 def optimize_static_route(second, trip_segment):
     """
     This function takes in a static trip_segment and a time then finds an optimal static itinerary for that trip.
@@ -780,7 +822,8 @@ def optimize_static_route(second, trip_segment):
     update_next_segment(trip_segment)
     
     return
-    
+
+@log_traceback    
 def simple_optimize_route(second, trip, flexbus):
     """
     Simple Heuristic Algorithm Optimization Routine
@@ -850,7 +893,7 @@ def simple_optimize_route(second, trip, flexbus):
 
     return flexbus, stop_array
 
-
+@log_traceback
 def heuristic_optimize_route(second, flexbus):
     """
     This is a test method built for experimentation.  It will either be integrated with the other optimizaton options or it will be deleted before 'release'
@@ -922,6 +965,7 @@ def heuristic_optimize_route(second, flexbus):
         
 #    return flexbus, opt_rte, locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count
 
+@log_traceback
 def generate_statistics(request):
     """
     This function generates some final statistics for the previously run simulation.
