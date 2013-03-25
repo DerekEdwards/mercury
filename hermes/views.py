@@ -8,38 +8,6 @@ from extra_utils.variety_utils import log_traceback
 from hermes import models, utils, planner_manager
 from NITS_CODE import settings
 
-#This bus speed is used for some very crude vehicle location estimation.  It is used as stop gap measure since I was violating the Google Maps API
-#TODO: Build an Open Source Routing Machine for Atlanta to hande vehicle routing issues
-#http://project-osrm.org/
-BUS_SPEED = 6.705 #Meters per Second ~= 15 mph
-
-#############################################
-#TODO: Have this read a GTFS-based trip planner.  These times are MARTA specific
-#Builds the transit matrix
-transit_matrix = []
-transit_row  = []
-transit_reader = csv.reader(open('hermes/bin/transit_times.csv', 'r'))
-for row in transit_reader:
-    for entry in row:
-        transit_row.append(float(entry))
-    transit_matrix.append(row)
-    transit_row = []
-#############################################
-
-@log_traceback
-def route_planner(flexbus_start, flexbus_end, time):
-    """
-    route_planner finds the time that it takes to travel between two subnets via fixed route transit
-    @param flexbus_start : flexbus object that the passenger will be departing from
-    @param flexbus_end : flexbus object that the passenger will be traveling towards
-    @param time : datetime object future future use with a trip planner
-    @return : triplet containing total transit time, total walking time, and total waiting time
-    """
-    #TODO: Replace this with a GTFS-based trip planner
-    #This line looks up travel times between MARTA stations in the transit_matrix.  7.5 minutes is added to account for average headways
-    transit_time =  (float(transit_matrix[flexbus_start.subnet.gateway.gateway_id - 1][flexbus_end.subnet.gateway.gateway_id -1]) + 7.5)*60.0
-    return transit_time, 0, 0
-
 @log_traceback
 def create_trips(passenger, second):
     """
@@ -347,9 +315,7 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
     """
     Given a flexbus, the current time, and an optional list of stops, this function returns the location of the bus at the given time.
     Given a flexbus and list of stops for that bus, determine the current location fo the bus.
-    This function needs serious work.  It previously pulled data from Google Maps but this violates the google MAPS API terms.
-    The current makes a very rough estimate of the busses position using staight line estimates.  
-    TODO: This needs to be changed to handle OSRM (Open Source Routing Machine) results.  OSRM allows for vehicle routing without API restrictions.
+    The flexbus locations are estimated from open source routing machine
     @param flexbus : the bus we want to know the location of
     @param second : the time that we are concerned with
     @param flexbus_stops : optional paramter that prevents us from having to requery the bus' stops
@@ -448,7 +414,6 @@ def get_cost(flexbus_lat, flexbus_lng, second, sequence, locations, new_trips, u
     @return the cost of visiting the trips given the sequence
     """
     time = second
-    speed = BUS_SPEED
     stop_order = []
     new_trips_cost = [0 for x in range(new_trips_count)]
     unstarted_trips_cost = [0 for x in range(full_trips_count - new_trips_count)]
@@ -457,12 +422,11 @@ def get_cost(flexbus_lat, flexbus_lng, second, sequence, locations, new_trips, u
     for index in range(len(sequence)):
         stop = sequence[index]
         stop_order.append(locations[stop])
-        if index: #TODO  Improve this bad approximation of bus speed
+        if index:
             previous_stop = sequence[index - 1]
-            travel_time = utils.haversine_dist([locations[stop][0], locations[stop][1]], [locations[previous_stop][0], locations[previous_stop][1]])*(1/speed)
+            geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([locations[stop][0], locations[stop][1]], [locations[previous_stop][0], locations[previous_stop][1]])
         else:
-            travel_time = utils.haversine_dist([flexbus_lat, flexbus_lng], [locations[stop][0], locations[stop][1]])*(1/speed)
-
+            geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([flexbus_lat, flexbus_lng], [locations[stop][0], locations[stop][1]])
         
         time += travel_time
 
@@ -513,7 +477,6 @@ def convert_sequence_to_locations(flexbus, second, sequence, locations, new_trip
     @return the order in which the stops are visited
     """
     sim_time = second
-    speed = BUS_SPEED
     stop_order = []
 
     #########################################
@@ -547,9 +510,9 @@ def convert_sequence_to_locations(flexbus, second, sequence, locations, new_trip
         stop_order.append(locations[stop])
         if index:
             previous_stop = sequence[index - 1]
-            travel_time = utils.get_google_distance(locations[stop][0], locations[stop][1], locations[previous_stop][0], locations[previous_stop][1])
+            geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([locations[stop][0], locations[stop][1]], [locations[previous_stop][0], locations[previous_stop][1]])
         else:
-            travel_time = utils.get_google_distance(flexbus_lat, flexbus_lng, locations[stop][0], locations[stop][1])
+            geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([flexbus_lat, flexbus_lng], [locations[stop][0], locations[stop][1]])
         flexbus_stop = models.Stop.objects.create(flexbus = flexbus, lat = locations[stop][0], lng = locations[stop][1], sequence = count, visit_time = sim_time + travel_time)
                      
         count += 1
@@ -585,7 +548,7 @@ def convert_sequence_to_locations(flexbus, second, sequence, locations, new_trip
             update_next_segment(trip)
 
     #Add a stoptime for returning to the gateway
-    travel_time = utils.haversine_dist([flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng], [locations[len(locations) - 1][0], locations[len(locations) - 1][1]])*(1/speed)
+    geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng], [locations[len(locations) - 1][0], locations[len(locations) - 1][1]])
     flexbus_stop = models.Stop.objects.create(flexbus = flexbus, lat = flexbus.subnet.gateway.lat, lng = flexbus.subnet.gateway.lng, sequence = count, visit_time = sim_time + travel_time)
 
     return stop_order
@@ -609,7 +572,6 @@ def simple_convert_sequence_to_locations(flexbus, second, stop_array):
     @return the order in which the stops are visited
     """
     sim_time = second
-    speed = BUS_SPEED
     stop_order = []
 
     sequence = stop_array[0].sequence
@@ -620,7 +582,7 @@ def simple_convert_sequence_to_locations(flexbus, second, stop_array):
         sequence += 1
         
     for index in range(len(stop_array) - 2):
-        travel_time = utils.get_google_distance(stop_array[index].lat, stop_array[index].lng, stop_array[index+1].lat, stop_array[index+1].lng)
+        geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([stop_array[index].lat, stop_array[index].lng], [stop_array[index+1].lat, stop_array[index+1].lng])
         stop_array[index + 1].visit_time = sim_time + travel_time
         stop_array[index + 1].save()
                      
@@ -630,9 +592,9 @@ def simple_convert_sequence_to_locations(flexbus, second, stop_array):
         if stop_array[index + 1].trip: #if this stop is for a trip and not an intermediate stop, update this trip and the next trip
             assign_time(stop_array[index + 1].trip, sim_time, stop_array[index + 1].type)
             update_next_segment(stop_array[index + 1].trip)
-
+            
     #Add a stoptime for returning to the gateway
-    travel_time = utils.get_google_distance(flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng, stop_array[len(stop_array) - 1].lat, stop_array[len(stop_array) - 1].lng)
+    geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng], [stop_array[len(stop_array) - 1].lat, stop_array[len(stop_array) - 1].lng])
     flexbus_stop = models.Stop.objects.create(flexbus = flexbus, lat = flexbus.subnet.gateway.lat, lng = flexbus.subnet.gateway.lng, sequence = sequence, visit_time = sim_time + travel_time)
 
     for stop in stop_array:
