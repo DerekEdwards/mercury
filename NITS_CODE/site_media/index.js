@@ -17,7 +17,7 @@ var GEN_PASSENGERS = false; //If true, we are waiting for Python to return from 
 var READY_TO_INS_TRIPS = false; //If true, we have finished generating passengers and are ready to insert trips into the system
 var INS_TRIPS = false; //If true, we are waiting for Python to return from inserting trips into the system
 var simulation_code; //Each simulation gets a unique simulation code
-var simulation_length = .05*3600; //How long the simulation will be run in seconds
+var simulation_length = 2*3600; //How long the simulation will be run in seconds
 var passengers_per_second = .05; //For random passenger generation mode, this is the rate that passengers are make trip requests
 var passenger_count;
 var ready_trips;
@@ -64,8 +64,7 @@ function generate_passengers(passengers_per_second, simulation_code, second){
 	       seconds = message['second'];
 	       ready_trips = message['ready_trips'];
 	       GEN_PASSENGERS = false;
-	       if(passenger_count > 0)
-		   READY_TO_INS_TRIPS = true;
+	       READY_TO_INS_TRIPS = true;
 	   }
 	  );
     console.log('passenger generation complete.');
@@ -113,6 +112,13 @@ INS_TRIPS: we are waiting for the python code to finish inserting trips
 TODO: Consider creating a single state variable instead of using three.
 */
 function master(){
+
+    console.log('STATES------------------  ');
+    console.log('INITIALIZING:  ' + INITIALIZING);
+    console.log('GEN_PASSENGERS:  ' + GEN_PASSENGERS);
+    console.log('READY_TO_INS_TRIPS:  ' + READY_TO_INS_TRIPS);
+    console.log('INS_TRIPS:  ' + INS_TRIPS);
+
     var last_time = false;
     if (seconds > simulation_length){
 	last_time = true;
@@ -154,7 +160,7 @@ initialize_simulation_data removes any data from the previous iteration and crea
 and the next line sets an interval that checks the state every 100 milliseconds and performs the appropriate action
 */
 initialize_simulation_data();
-var master_interval = setInterval(function(){master()},100);
+var master_interval = setInterval(function(){master()},1000);
 
 
 

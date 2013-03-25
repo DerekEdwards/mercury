@@ -351,6 +351,11 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
     percent_complete = float(second - last_stop_time)/float(next_stop.visit_time - last_stop_time) 
 
     geometry, distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([next_stop.lat, next_stop.lng], [last_stop.lat, last_stop.lng])
+
+    #The flexbus is between two points that are a trivial distance apart
+    if distance < 10: 
+        return last_stop.lat, last_stop.lng, 0
+
     points = planner_manager.decode_line(geometry)
 
     #This assumes that the travel speed is constant between these two points.  It obviously is not, but on the average this will be the case.

@@ -60,7 +60,6 @@ def get_survey_passengers(request):
         else:
             second += 1
 
-        
     json_str = simplejson.dumps({"passengers":passengers.count(), "second":second, "ready_trips":trips_array})
     return HttpResponse(json_str)
 

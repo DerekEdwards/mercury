@@ -7,7 +7,7 @@ from hermes import models, views
 @log_traceback
 def insert_trip(request):
     """
-    insert_trip reads in an array of trip ids, pulss those ids from the db an inserts them optimally
+    insert_trip reads in an array of trip ids, pulls those ids from the db an inserts them optimally
     TODO: Move this to VIEWS, there is no need for a separate file for this
     @param request contains a POST string parameter called 'trip_ids' of the form [id1, id2, id3] as well as the 'second' parameter
     """
