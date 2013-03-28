@@ -41,7 +41,8 @@ def create_trips(passenger, second):
         create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [end_bus.subnet.gateway.lat, end_bus.subnet.gateway.lng], trip_sequence = 0, earliest_start_time = second)       
     else: #Both legs are DRT.
         start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses, end_buses)
-        create_static_trip(passenger, [start_bus.subnet.gateway.lat, start_bus.subnet.gateway.lng], [end_bus.subnet.gateway.lat, end_bus.subnet.gateway.lng], trip_sequence = 1)
+        if not (start_bus == end_bus):
+            create_static_trip(passenger, [start_bus.subnet.gateway.lat, start_bus.subnet.gateway.lng], [end_bus.subnet.gateway.lat, end_bus.subnet.gateway.lng], trip_sequence = 1)
     return
 
 @log_traceback
@@ -67,11 +68,14 @@ def create_dynamic_trip(passenger, second, start_buses = None, end_buses = None)
         #If the two busses are the same bus, this can be handled by one bus without fixed transit
         #TODO: Try to make this happen if possible, instead of only checking to see if the same bus was chosen by accident
         models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = passenger.end_lat, start_lng = passenger.start_lng, end_lng = passenger.end_lng, status = 1, earliest_start_time = second, trip_sequence = 0)
+   
     elif start_buses and end_buses:
         models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = start_bus.subnet.gateway.lat, start_lng = passenger.start_lng, end_lng = start_bus.subnet.gateway.lng, status = 1, earliest_start_time = second, trip_sequence = 0)
         models.TripSegment.objects.create(passenger = passenger, flexbus = end_bus, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = 2)
+    
     elif start_buses and (not end_buses):
         models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = start_bus.subnet.gateway.lat, start_lng = passenger.start_lng, end_lng = start_bus.subnet.gateway.lng, status = 1, earliest_start_time = second, trip_sequence = 0)
+    
     elif (not start_buses) and end_buses:
         models.TripSegment.objects.create(passenger = passenger, flexbus = end_bus, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = 1)
 
@@ -586,11 +590,11 @@ def simple_convert_sequence_to_locations(flexbus, second, stop_array):
         stop.save()
         sequence += 1
         
-    for index in range(len(stop_array) - 2):
+    for index in range(len(stop_array) - 1):
         geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([stop_array[index].lat, stop_array[index].lng], [stop_array[index+1].lat, stop_array[index+1].lng])
         stop_array[index + 1].visit_time = sim_time + travel_time
         stop_array[index + 1].save()
-                     
+                
         sim_time += travel_time
 
         #Update the times for the trips that these stops represent
@@ -769,12 +773,14 @@ def optimize_static_route(second, trip_segment):
         print 'ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR'
 
     current_time = second + settings.SIMULATION_START_TIME
-    hour = int(current_time/3600)
-    minute = int((current_time - (hour*3600))/60)
-    second = current_time - (minute*60) - (hour*3600)
 
-    trip_time = datetime.datetime(year = settings.SIMULATION_START_YEAR, month = settings.SIMULATION_START_MONTH, day = settings.SIMULATION_START_DAY, hour = hour, minute = minute, second = second)
-    walking_time, waiting_time, riding_time = planner_manager.get_optimal_transit_times([trip_segment.start_lat, trip_segment.start_lng], [trip_segment.end_lat, trip_segment.end_lng], trip_time)
+    hours = int(current_time/3600)
+    minutes = int((current_time - (hours*3600))/60)
+    seconds = current_time - (minutes*60) - (hours*3600)
+    
+    trip_time = datetime.datetime(year = settings.SIMULATION_START_YEAR, month = settings.SIMULATION_START_MONTH, day = settings.SIMULATION_START_DAY, hour = hours, minute = minutes, second = seconds)
+
+    walking_time, waiting_time, riding_time = planner_manager.get_optimal_transit_times([trip_segment.end_lat, trip_segment.end_lng], [trip_segment.start_lat, trip_segment.start_lng], trip_time)
 
     total_time = walking_time + waiting_time + riding_time
 

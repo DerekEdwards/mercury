@@ -33,8 +33,8 @@ def get_survey_passengers(request):
     second = int(request.POST['second'])
 
     ready = False
-    while(not ready):
-
+    while(not ready and second <= settings.SIMULATION_LENGTH):
+        
         #Pull Passengers at this second
         passengers = models.SurveyPassenger.objects.filter(time_of_request = second)
     
@@ -201,5 +201,5 @@ def load_survey_passengers():
     TODO: Move to a separate script
     This function calls the function to load survey passengers.
     """
-    insert_survey_passengers("hermes/bin/32xupSampleForBigScript1Miles.csv")
+    insert_survey_passengers(settings.SURVEY_PASSENGER_FILE)
     return True

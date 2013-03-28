@@ -36,9 +36,10 @@ def get_optimal_transit_times(toLocation, fromLocation, requestTime=None):
         duration = itinerary['duration']
         startTime = itinerary['startTime']
         endTime = itinerary['endTime']
-
+        
         #wait time from OTP does not include the initial wait, add this
         initialWait = startTime/1000 - time.mktime(requestTime.timetuple())
+
         waitingTime = itinerary['waitingTime']
         realWait = int(waitingTime + initialWait)
         #return walk, wait, ride times
@@ -63,20 +64,28 @@ def get_optimal_transit_times(toLocation, fromLocation, requestTime=None):
 def get_optimal_vehicle_itinerary(toLocation, fromLocation):
     """
     This function takes in a fromLocation and toLocation in the form of [lat, lng] and returns a vehicle shape, distance (meters), and travel time (seconds) calculated from Open Source Routing Machine.  The shape string is a Google Polyline, information on this polyline can be found at https://developers.google.com/maps/documentation/utilities/polylinealgorithm.
-    @param : toLocatio  = the destination in the form of [lat, lng]
+    @param : toLocation  = the destination in the form of [lat, lng]
     @param : fromLocation = the origin in the form of [lat, lng]
     @returns : triplet of the form [Path Polyline, Distance (meters), Time (seconds)] 
     """
+    if abs(toLocation[0] - fromLocation[0]) < .00001 and abs(toLocation[1] - fromLocation[1]) < .00001:
+        return '', 0, 0
+
     OSRM_SERVER_URL = settings.OSRM_SERVER_URL
     URL_STRING = OSRM_SERVER_URL + "viaroute?loc=" + str(fromLocation[0]) + "," + str(fromLocation[1]) + "&loc=" + str(toLocation[0]) + "," + str(toLocation[1])
-    
+   
     contents = urllib2.Request(URL_STRING, headers={"Accept" : "application/json"})
     response = urllib2.urlopen(contents)
     json_response = json.loads(response.read())
     route_geometry =  json_response['route_geometry']
     total_distance = json_response['route_summary']['total_distance']
     total_time = json_response['route_summary']['total_time']
-    
+
+    #The total time should never be very large.  Sometimes OSRM throws very large travel times on errors.  This will handle those situations and cause an error to be thrown.
+    if total_time > 10000:
+        print URL_STRING
+        return None, None, None
+
     return route_geometry, total_distance, total_time
 
 @log_traceback

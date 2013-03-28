@@ -56,11 +56,11 @@ MEDIA_URL = 'site_media/'
 # Don't put anything in this directory yourself; store your static files
 # in apps' "static/" subdirectories and in STATICFILES_DIRS.
 # Example: "/home/media/media.lawrence.com/static/"
-STATIC_ROOT = '/home/derek/Code/static/'
+STATIC_ROOT = '/home/derek/Code/NITS_CODE/'
 
 # URL prefix for static files.
 # Example: "http://media.lawrence.com/static/"
-STATIC_URL = '/static/'
+STATIC_URL = '/NITS_CODE/'
 
 # Additional locations of static files
 STATICFILES_DIRS = (
@@ -155,6 +155,8 @@ LOGGING = {
 }
 
 USE_SURVEY_PASSENGERS = True
+SURVEY_PASSENGER_FILE = "hermes/bin/bigTest.csv"
+
 OTP_SERVER_URL = 'http://localhost:8080/'
 OSRM_SERVER_URL = 'http://localhost:8001/'
 SIMULATION_START_TIME = 7*3600 #seconds into the day
@@ -164,3 +166,5 @@ SIMULATION_START_YEAR = 2013
 USE_ISOCHRONE_SUBNET = True
 USE_CIRCULAR_SUBNET = False
 CIRCULAR_SUBNET_RADIUS = 1000 #meters
+
+SIMULATION_LENGTH = 50000

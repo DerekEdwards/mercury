@@ -1,5 +1,5 @@
-from NITS.hermes import models
-from NITS.hermes import views
+from hermes import models
+from hermes import views
 import time
 import random, datetime
 

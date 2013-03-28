@@ -16,7 +16,11 @@ def insert_trip(request):
     #Remove the first and last characters (They are just brackets)
     trip_ids = trip_ids[1:-1]
     trip_ids = trip_ids.split(',');
+
     for idx in range(len(trip_ids)):
+        if trip_ids[idx] == '': #No trips were returned, we have reached the end of the simulation
+            json_str = simplejson.dumps({"success":True})
+            return HttpResponse(json_str)
         trip_ids[idx] = int(trip_ids[idx])
 
     second = int(request.POST['second'])        
