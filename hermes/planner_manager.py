@@ -58,7 +58,7 @@ def get_optimal_transit_times(toLocation, fromLocation, requestTime=None):
         print 'Ending ' + str(fromLocation[0]) + ',' + str(fromLocation[1])
         print URL_STRING
         print error
-        return None, None, None
+        return None, None, None 
 
 @log_traceback
 def get_optimal_vehicle_itinerary(toLocation, fromLocation):
@@ -77,14 +77,15 @@ def get_optimal_vehicle_itinerary(toLocation, fromLocation):
     contents = urllib2.Request(URL_STRING, headers={"Accept" : "application/json"})
     response = urllib2.urlopen(contents)
     json_response = json.loads(response.read())
+    status = json_response['status']
+
+    #A route could not be found.  Most likely because a location is in an inaccessible spot.  Make a slight modifaction to the start/end locations and try again.
+    if status == 207:
+        return get_optimal_vehicle_itinerary([toLocation[0]+.001, toLocation[1]+.001], [fromLocation[0]+.001, fromLocation[1]+.001])
+   
     route_geometry =  json_response['route_geometry']
     total_distance = json_response['route_summary']['total_distance']
     total_time = json_response['route_summary']['total_time']
-
-    #The total time should never be very large.  Sometimes OSRM throws very large travel times on errors.  This will handle those situations and cause an error to be thrown.
-    if total_time > 10000:
-        print URL_STRING
-        return None, None, None
 
     return route_geometry, total_distance, total_time
 
