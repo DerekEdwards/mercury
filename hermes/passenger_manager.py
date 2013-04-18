@@ -48,17 +48,37 @@ def get_survey_passengers(request):
             ###########################
             views.create_trips(new_passenger, second)
 
+            ##############
+            ##This has been moved from script
+            ##############
+            ready_trips = models.TripSegment.objects.filter(earliest_start_time__lte = second, status = 1)
+            if ready_trips:
+                ready = True
+                for trip in ready_trips:
+                    if trip.static:
+                        views.optimize_static_route(second, trip)
+                    else:
+                        flexbus, stop_array = views.insert_trip(second, trip)
+                        order = views.simple_convert_sequence_to_locations(flexbus, second, stop_array)
+            ##############
+
+        if not ready:
+            second += 1
+
     ### Check to see if trips are ready to be inserted.  Any passengers created above will have trips here
     ### This will also pull trips that were created earlier but weren't ready to be inserted
     ### If not trips or passengers are ready at this second, increment the second and keep looking for trips in the future
-        ready_trips = models.TripSegment.objects.filter(earliest_start_time__lte = second, status = 1)
-        trips_array = []
-        if ready_trips:
-            ready = True
-            for trip in ready_trips:
-                trips_array.append(trip.id);
-        else:
-            second += 1
+        #ready_trips = models.TripSegment.objects.filter(earliest_start_time__lte = second, status = 1)
+        #trips_array = []
+        #if ready_trips:
+        #    ready = True
+        #    for trip in ready_trips:
+        #        trips_array.append(trip.id);
+        #else:
+        #    second += 1
+            
+        trips_array = [2,4,3]
+
 
     json_str = simplejson.dumps({"passengers":passengers.count(), "second":second, "ready_trips":trips_array})
     return HttpResponse(json_str)

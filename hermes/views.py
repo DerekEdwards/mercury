@@ -32,7 +32,11 @@ def create_trips(passenger, second):
         return
 
     if not start_buses and not end_buses: #This is a fully static trip
-        create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 0, earliest_start_time = second)
+        if settings.CREATE_STATIC_TRIPS: #If we are tracking fully static trips, create the trip and store it in the db
+            create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 0, earliest_start_time = second)
+        else: #if we are not creating fully static trips, delete this passenger from consideration
+            passenger.delete()
+        
     elif start_buses and (not end_buses): #The first leg is DRT, the rest of the trip is Static
         start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses = start_buses, end_buses = None)
         create_static_trip(passenger, [start_bus.subnet.gateway.lat, start_bus.subnet.gateway.lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 1)
@@ -71,13 +75,13 @@ def create_dynamic_trip(passenger, second, start_buses = None, end_buses = None)
    
     elif start_buses and end_buses:
         models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = start_bus.subnet.gateway.lat, start_lng = passenger.start_lng, end_lng = start_bus.subnet.gateway.lng, status = 1, earliest_start_time = second, trip_sequence = 0)
-        models.TripSegment.objects.create(passenger = passenger, flexbus = end_bus, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = 2)
+        models.TripSegment.objects.create(passenger = passenger, flexbus = None, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = 2)
     
     elif start_buses and (not end_buses):
         models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = start_bus.subnet.gateway.lat, start_lng = passenger.start_lng, end_lng = start_bus.subnet.gateway.lng, status = 1, earliest_start_time = second, trip_sequence = 0)
     
     elif (not start_buses) and end_buses:
-        models.TripSegment.objects.create(passenger = passenger, flexbus = end_bus, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = 1)
+        models.TripSegment.objects.create(passenger = passenger, flexbus = None, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = 1)
 
     return start_bus, end_bus
 
@@ -120,6 +124,8 @@ def which_bus(busses, passenger, second):
     """
     min_bus = None
     min_time = float('inf');
+    #import pdb
+    #pdb.set_trace()
     for bus in busses:
         #Get the trips for each bus
         trips = models.TripSegment.objects.filter(flexbus = bus, end_time__gte = second, end_time__lt = 20000)
@@ -265,6 +271,18 @@ def fix_order(V, full_trips_count):
             V[a] = idx1 + full_trips_count
 
     return V
+
+@log_traceback
+def get_cost_from_array(i, j, stop_array, new_start, new_end):
+    """
+    This is the function that is used to to test the cost of assigning passengers in this particlar order.  It returns a float value for cost that combines both VMT and Passenger costs
+    @param i : insertion point of the new_start location
+    @param j : inesrtion point of the new_end location
+    @param stop_array : the array of stops from the current location of the flexbus to the end of the route
+    @param new_start : a stop object for the new pickup location
+    @param new_end : a stop object for the new dropoff location
+    """
+    return 0
 
 @log_traceback
 def get_distance_from_array(lats, lngs):
@@ -806,6 +824,14 @@ def simple_optimize_route(second, trip, flexbus):
     @param flexbus : a flexbus object
     Returns the order and cost
     """
+    #If this trip is the final leg, it will not yet have a vehicle assigned.  Search for the optimal vehicle.
+    #TODO:  This function will allow vehicles from other subnets to pickup the passenger even it the passenger is starting at a different Gateway
+    if not flexbus:
+        buses = get_candidate_vehicles_from_point_geofence(trip.start_lat, trip.start_lng)
+        flexbus = which_bus(buses, trip.passenger, second)
+        trip.flexbus = flexbus
+        trip.save()
+    
     flexbus_lat, flexbus_lng, diff_time = get_flexbus_location(flexbus, second)
 
     previous_stops = models.Stop.objects.filter(flexbus = flexbus, visit_time__lt = second).order_by('visit_time')
@@ -851,6 +877,7 @@ def simple_optimize_route(second, trip, flexbus):
             doinserted_lngs.insert(j, trip.end_lng)
             doinserted_lats.append(flexbus.subnet.gateway.lat)
             doinserted_lngs.append(flexbus.subnet.gateway.lng)
+            total_cost = get_cost_from_array(i, j, stop_array, new_start, new_end)
             total_distance = get_distance_from_array(doinserted_lats, doinserted_lngs)
             if total_distance < shortest_distance:
                 shortest_distance = copy.copy(total_distance)

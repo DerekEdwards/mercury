@@ -11,6 +11,12 @@ def insert_trip(request):
     TODO: Move this to VIEWS, there is no need for a separate file for this
     @param request contains a POST string parameter called 'trip_ids' of the form [id1, id2, id3] as well as the 'second' parameter
     """
+
+    #Don't do anything.  We have already inserted the trips
+    json_str = simplejson.dumps({"success":True})
+    return HttpResponse(json_str)
+
+
     trip_ids = request.POST['trip_ids']
 
     #Remove the first and last characters (They are just brackets)

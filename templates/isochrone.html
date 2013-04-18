@@ -105,8 +105,8 @@
              However, it appears that there is a check to see if the number of minutes has been passed by more thatn 40% and 
              the number of checks has surpassed 50
             */
-            if(curr_meas > (mins + (mins * 5)) || (m > 20 && found ==1) || m > 200){
-                points.push(new GLatLng(prev_dest.y, prev_dest.x));
+            if(curr_meas > (mins + (mins * 5)) || (m > 30 && found ==1) || m > 200){
+                points.push(new GLatLng(prev_dest.x, prev_dest.y));
                 start_s = start_s + slice;
                 x = inc_x;
                 y = inc_y;

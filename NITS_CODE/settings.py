@@ -156,6 +156,7 @@ LOGGING = {
 
 USE_SURVEY_PASSENGERS = True
 SURVEY_PASSENGER_FILE = "hermes/bin/bigTest.csv"
+CREATE_STATIC_TRIPS = False #used in views.py.  If we are debugging and don't to spend a lot of computation time creating static trips, set this to false
 
 OTP_SERVER_URL = 'http://localhost:8080/'
 OSRM_SERVER_URL = 'http://localhost:8001/'
@@ -167,4 +168,4 @@ USE_ISOCHRONE_SUBNET = True
 USE_CIRCULAR_SUBNET = False
 CIRCULAR_SUBNET_RADIUS = 1000 #meters
 
-SIMULATION_LENGTH = 50000
+SIMULATION_LENGTH = 20*60
