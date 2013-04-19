@@ -58,7 +58,7 @@
 		   map.addOverlay(new GMarker(new GLatLng(starts[i][0], starts[i][1]),greenMarkerOptions));				   
 		   map.addOverlay(new GMarker(new GLatLng(ends[i][0], ends[i][1]), redMarkerOptions));				   
 
-	           html_data = html_data + "<br>P" + i + ":  " + times[i];
+	           html_data = html_data + "<br>P" + i + ":  " + times[i][0] + ", " + times[i][1] + ", "  + times[i][2] + ", " + times[i][3];
 
 	       } 				   
 	      $('#passenger_times').html(html_data);
@@ -93,13 +93,13 @@ height:100%;
                  onclick="this.value='Woot!';get_passengers(document.getElementById('flexbus').value)"/>
           <img id="loader" src="/site_media/loader.gif" style="display:none;"/>
      </div>
-     <table><tr><td style="width:100px; vertical-align:top;">
-     <div id="passenger_times">
+     <table><tr><td style="width:300px; vertical-align:top;">
+     <div id="passenger_times" syle="width:300px;">
      <b>Passenger Times:<b>
        </div>
 	 </td>
-     <td style="width:1200px;">
-       <div id="map_canvas" style="width:1200px; height:800px; border: 3px solid rgb(51, 51, 51);"></div>
+     <td style="width:1000px;">
+       <div id="map_canvas" style="width:1000px; height:800px; border: 3px solid rgb(51, 51, 51);"></div>
      </td></tr>
      </table>
 

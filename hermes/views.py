@@ -124,8 +124,7 @@ def which_bus(busses, passenger, second):
     """
     min_bus = None
     min_time = float('inf');
-    #import pdb
-    #pdb.set_trace()
+   
     for bus in busses:
         #Get the trips for each bus
         trips = models.TripSegment.objects.filter(flexbus = bus, end_time__gte = second, end_time__lt = 20000)
@@ -146,8 +145,8 @@ def which_bus(busses, passenger, second):
             min_time = last_time - second
             min_bus = bus
 
-    #If no bus is scheduld to be done in 30 minutes, create a new bus to handle this request
-    if min_time > 30*60:
+    #If no bus is scheduld to be done in 30 minutes or there are > 19 passengers still waiting, create a new bus to handle this request
+    if min_time > 30*60 or trips.count() > 19:
         vehicles = models.FlexBus.objects.all()
         id = vehicles.count() + 1
         if len(busses) > 0:
@@ -170,9 +169,7 @@ def get_candidate_vehicles_from_point_geofence(lat, lng):
 
     subnets = models.Subnet.objects.all()
     for subnet in subnets:
-        gw = subnet.gateway
-        sides = models.FencePost.objects.filter(gateway = gw)
-        if point_within_geofence(lat, lng, sides):
+        if within_coverage_area(lat, lng, subnet):
             subnets_in_range.append(subnet)
 
     for subnet in subnets_in_range:
@@ -184,6 +181,58 @@ def get_candidate_vehicles_from_point_geofence(lat, lng):
         
 
 @log_traceback
+def within_coverage_area(lat, lng, subnet):
+    """
+    The check list:
+    1:  Are we within the geofence?
+    2:  Is this partuclar subnet outside of a pocket? i.e., maybe the trip is within the geofecne but still more than the maximum time limit away
+    3:  Are we outside the safe walking zone?
+    4:  Is this subnet's gateway the closest gateway (optional) 
+    
+    Return False if any of these tests fail.
+
+    @param lat : latitude of a passenger point
+    @param lng : longitude of a passenger point
+    @param subnet : a subnet object that we are testing this point agains
+    @return : True if all tests pass, otherwise return false
+    """
+
+    #1 Check that we are within the larger geofence, this technically is not needed since we are double-checking the isochrone boundary in the next
+    # test, but this is done bcause it is a very fast way to weed out illegal points without needing to do a static trip.  Also, if we are only 
+    # concerned about the shape and not the driving time, this will still allow us to do that.
+    gw = subnet.gateway
+    sides = models.FencePost.objects.filter(gateway = gw)
+    if not point_within_geofence(lat,lng,sides):
+        return False
+
+    #2 Check that we are not in a pocket
+    geometry, distance, driving_time = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [subnet.gateway.lat, subnet.gateway.lng]) #TOLocation, FromLocation
+    if driving_time > subnet.max_driving_time:
+        print 'Failed Driving Time'
+        print driving_time
+        return False
+
+    #3 Check that we are not within the walking distance
+    walking_time = planner_manager.get_optimal_walking_time([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])
+    if walking_time < subnet.max_walking_time:
+        print 'Failed Walking Time'
+        print walking_time
+        return False
+
+    #4 Check that this subnet's gateway is the closest gateway
+    gateways = models.Gateway.objects.all()
+    for gw in gateways:
+        if gw == subnet.gateway:
+            continue
+        geometry, distance, time = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [gw.lat, gw.lng]) #TOLocation, FromLocation
+        if time < driving_time:
+            print 'Failed closest GW'
+            print gw.description
+            return False
+
+    return True
+
+@log_traceback
 def point_within_geofence(lat, lng, sides):
     """
     This function takes in lat, lng, and a query of FencePost objects and returns True if the lat,lng is within the FencePost perimeter
@@ -192,6 +241,8 @@ def point_within_geofence(lat, lng, sides):
     @param lng : float longitude of point
     @param sides : a query of FencePost objects
     """
+
+
     sides_cnt = sides.count()
     if sides_cnt < 3:
         return False
@@ -209,71 +260,7 @@ def point_within_geofence(lat, lng, sides):
     return pointStatus
 
 @log_traceback
-def get_candidate_vehicles_from_point_radius(lat, lng):
-    """
-    Take in a point, and determine which buses can visit this point.  Return those busses
-    This function finds all subnet gateways that are within 1800 meters of the point. The function returns all vehicles within any subnet in range.  The function also returns the closest subnet.
-    @param lat : latitude
-    @param lng : longitude
-    @return vehicles, closest_subnet : return a set of vehicles that are eligible to service this trip as well as the appropriate subnet    
-    """
-    #For the simplest case, there is one bus per subnet.
-    subnets = models.Subnet.objects.all()
-    min_dist = settings.CIRCULAR_SUBNET_RADIUS 
-    min_subnet = None
-    closest_dist = float('inf')
-    closest_subnet = None
-    subnets_in_range = []
-    vehicles = []
-    # Assign passenger to the subnet that's center is closest to the passengers lat/lng
-    for subnet in subnets:
-        distance = utils.haversine_dist([float(subnet.center_lat), float(subnet.center_lng)], [lat, lng])
-        if distance < min_dist:
-            subnets_in_range.append(subnet)
-        if distance < closest_dist:
-            closest_subnet = subnet
-
-    for subnet in subnets_in_range:
-        subnet_vehicles = subnet.flexbus_set.all()
-        for sv in subnet_vehicles:
-            vehicles.append(sv)
-
-    return vehicles
-
-@log_traceback
-def randperm(n):
-    """
-    create a random permutation of n integers in the range of n
-    This is used in the Genetic Algorithm optimization approach
-    @param n : integer
-    @return an array of integers
-    """
-    t = range(n)
-    random.shuffle(t)
-    return t
-
-@log_traceback
-def fix_order(V, full_trips_count):
-    """
-    This is what separates DARP from TSP
-    When creating random generations we must ensure that the passenger's dropoff locations is not visited before that passenger's
-    pickup location. Used with the Genetic Algorithm Optimizer
-    @param V : an array of pickup and drop off locations
-    @param full_trips_count : the number of trips that have not yet been started
-    @return an array of location where we ensure that passengers are not dropped off before they are picked up
-    """
-
-    for idx1 in range(full_trips_count):
-        a=copy.copy(V.index(idx1))
-        b=copy.copy(V.index(idx1+(full_trips_count)))
-        if a > b:
-            V[b] = idx1
-            V[a] = idx1 + full_trips_count
-
-    return V
-
-@log_traceback
-def get_cost_from_array(i, j, stop_array, new_start, new_end):
+def get_cost_from_array(i, j, stop_array, new_start, new_end, second):
     """
     This is the function that is used to to test the cost of assigning passengers in this particlar order.  It returns a float value for cost that combines both VMT and Passenger costs
     @param i : insertion point of the new_start location
@@ -281,8 +268,67 @@ def get_cost_from_array(i, j, stop_array, new_start, new_end):
     @param stop_array : the array of stops from the current location of the flexbus to the end of the route
     @param new_start : a stop object for the new pickup location
     @param new_end : a stop object for the new dropoff location
+    @param second : time into the simulation
+    @return the total combined operator and passenger costs
     """
-    return 0
+    stop_array.insert(i, new_start)
+    stop_array.insert(j, new_end)
+
+    print i,j
+    import pdb
+    #pdb.set_trace()
+
+    points = []
+    for stop in stop_array:
+        points.append([stop.lat, stop.lng])
+        
+    vmt = get_distance_from_array2(points)
+    passenger_costs, cost_array = get_total_passenger_costs(stop_array, second)
+    
+    return settings.ALPHA*vmt + settings.BETA*passenger_costs, cost_array
+
+@log_traceback
+def get_total_passenger_costs(stops, second):
+    """
+    Given an array of stops.  Look at the stops that are drop offs, for each drop off determine the total time for this trip.  Sum all of the trip times
+    @param points : an array of stops
+    @param second : time into the simulation
+    """
+    points = []
+    for stop in stops:
+        points.append([stop.lat, stop.lng])
+
+    total_time = second
+    visit_times = [total_time]
+    for index in range(len(points) - 1):
+        geometry, distance, time =  planner_manager.get_optimal_vehicle_itinerary(points[index + 1], points[index]) #TOLocation, FromLocation
+        total_time += time
+        visit_times.append(total_time)
+
+    index = 0
+    total_passenger_time = 0
+    for stop in stops:
+        if stop.type == 2: #this is a dropoff
+            end_time = visit_times[index]
+            total_time_for_trip = end_time - stop.trip.earliest_start_time
+            total_passenger_time += total_time_for_trip
+        index += 1
+
+    return total_passenger_time, visit_times
+
+@log_traceback
+def get_distance_from_array2(points):
+    """
+    Given an array of lats and an array of lngs, find the total distance to travel the path
+    @param points : an array of points of the form [lat,lng]
+    @return the total physical distance to visit these points in the given order
+    """
+    distance = 0
+    for index in range(len(points) - 1):
+        distance += utils.haversine_dist(points[index], points[index+1])
+
+    return distance
+
 
 @log_traceback
 def get_distance_from_array(lats, lngs):
@@ -423,362 +469,6 @@ def get_intermediate_point(last_point, next_point, current_distance, last_distan
 
     return [lat,lng]
 
-
-@log_traceback
-def get_cost(flexbus_lat, flexbus_lng, second, sequence, locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count):
-    """
-    given a vehicles location a set of trips and sequences, calculate the cost of visiting the locations
-    @param flexbus_lat : current lat of the bus
-    @param flexbus_lng : current lng of the bus
-    @param second : current time
-    @param sequence : the sequence in which to visit the given locations
-    @param locations : the locations to be visited
-    @param new_trips : newly requested trips
-    @param unstarted_trips : trips that have not started but are not newly requested
-    @param started_trips : trips that have already started
-    @param new_trips_count : how many trips are new
-    @param full_trips_count : how many trips have not yet started
-    @return the cost of visiting the trips given the sequence
-    """
-    time = second
-    stop_order = []
-    new_trips_cost = [0 for x in range(new_trips_count)]
-    unstarted_trips_cost = [0 for x in range(full_trips_count - new_trips_count)]
-    started_trips_cost = []
-    
-    for index in range(len(sequence)):
-        stop = sequence[index]
-        stop_order.append(locations[stop])
-        if index:
-            previous_stop = sequence[index - 1]
-            geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([locations[stop][0], locations[stop][1]], [locations[previous_stop][0], locations[previous_stop][1]])
-        else:
-            geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([flexbus_lat, flexbus_lng], [locations[stop][0], locations[stop][1]])
-        
-        time += travel_time
-
-        #1 = assign start_time
-        #2 = assign end_time 
-
-        #P/U time of new trips:
-        if stop < new_trips_count:
-            continue
-
-        #P/U time of unstarted trips, that aren't new
-        elif stop < full_trips_count:
-            continue
-
-        #D/O time of new_trips
-        elif stop < (new_trips_count + full_trips_count):
-            trip = new_trips[stop - full_trips_count]
-            new_trips_cost[stop - full_trips_count] = time - trip.earliest_start_time
-
-        #D/O time of unstarted trips, that aren't new    
-        elif stop < 2*full_trips_count:
-            trip = unstarted_trips[stop - full_trips_count - new_trips_count]
-            unstarted_trips_cost[stop - full_trips_count - new_trips_count] = time - trip.earliest_start_time
-
-        #D/O time of started trips
-        else:
-            trip = started_trips[stop - 2*full_trips_count]
-            started_trips_cost.append(time - trip.earliest_start_time)
-            
-    cost = sum(new_trips_cost) + sum(unstarted_trips_cost) + sum(started_trips_cost)
-    return cost
-
-@log_traceback
-def convert_sequence_to_locations(flexbus, second, sequence, locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count):
-    """
-    Convert a sequence of stops into the stop lat,lngs
-    Assign start_time and end_time to trips
-    @param flexbus_lat : current lat of the bus
-    @param flexbus_lng : current lng of the bus
-    @param second : current time
-    @param sequence : the sequence in which to visit the given locations
-    @param locations : the locations to be visited
-    @param new_trips : newly requested trips
-    @param unstarted_trips : trips that have not started but are not newly requested
-    @param started_trips : trips that have already started
-    @param new_trips_count : how many trips are new
-    @param full_trips_count : how many trips have not yet started
-    @return the order in which the stops are visited
-    """
-    sim_time = second
-    stop_order = []
-
-    #########################################
-    # PART 1 - Purge all of the flexbus's future stops and get the current location of the vehicle
-    ##########################################
-
-    flexbus_stops = models.Stop.objects.filter(flexbus = flexbus).order_by('visit_time')
-    previous_stops = flexbus_stops.filter(visit_time__lte = second)
-    flexbus_lat, flexbus_lng, other_time = get_flexbus_location(flexbus, second, flexbus_stops)
-
-    #The bus has prevoius stops
-    if previous_stops:
-        count = previous_stops[previous_stops.count() - 1].sequence + 1
-        models.Stop.objects.create(flexbus = flexbus, lat = flexbus_lat, lng = flexbus_lng, sequence = count, visit_time = second)
-        count += 1
-    #The bus has not yet left the station
-    else:
-        models.Stop.objects.create(flexbus = flexbus, lat = flexbus.subnet.gateway.lat, lng = flexbus.subnet.gateway.lng, sequence = 0, visit_time = second)
-        count = 1
-        
-    future_stops = flexbus_stops.filter(visit_time__gt = second)
-    future_stops.delete()
-    
-    #########################################
-    # PART 2 - Get the actual driving results and route path
-    ##########################################
-
-        
-    for index in range(len(sequence)):
-        stop = sequence[index]
-        stop_order.append(locations[stop])
-        if index:
-            previous_stop = sequence[index - 1]
-            geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([locations[stop][0], locations[stop][1]], [locations[previous_stop][0], locations[previous_stop][1]])
-        else:
-            geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([flexbus_lat, flexbus_lng], [locations[stop][0], locations[stop][1]])
-        flexbus_stop = models.Stop.objects.create(flexbus = flexbus, lat = locations[stop][0], lng = locations[stop][1], sequence = count, visit_time = sim_time + travel_time)
-                     
-        count += 1
-        sim_time += travel_time
-
-        #1 = assign start_time
-        #2 = assign end_time 
-
-        #P/U time of new trips:
-        if stop < new_trips_count:
-            assign_time(new_trips[stop], sim_time, 1)
-
-        #P/U time of unstarted trips, that aren't new
-        elif stop < full_trips_count:
-            assign_time(unstarted_trips[stop - new_trips_count], sim_time, 1)
-
-        #D/O time of new_trips
-        elif stop < (new_trips_count + full_trips_count):
-            trip = new_trips[stop - full_trips_count]
-            assign_time(trip, sim_time, 2)
-            update_next_segment(trip)
-
-        #D/O time of unstarted trips, that aren't new    
-        elif stop < 2*full_trips_count:
-            trip = unstarted_trips[stop - full_trips_count - new_trips_count]
-            assign_time(trip, sim_time, 2)
-            update_next_segment(trip)
-
-        #D/O time of started trips
-        else:
-            trip = started_trips[stop - 2*full_trips_count]
-            assign_time(trip, sim_time, 2)
-            update_next_segment(trip)
-
-    #Add a stoptime for returning to the gateway
-    geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng], [locations[len(locations) - 1][0], locations[len(locations) - 1][1]])
-    flexbus_stop = models.Stop.objects.create(flexbus = flexbus, lat = flexbus.subnet.gateway.lat, lng = flexbus.subnet.gateway.lng, sequence = count, visit_time = sim_time + travel_time)
-
-    return stop_order
-
-@log_traceback
-def simple_convert_sequence_to_locations(flexbus, second, stop_array):
-    """
-    This function converts sequences to physical locations and is meant to be used with the simple hueristic method.
-    Convert a sequence of stops into the stop lat,lngs
-    Assign start_time and end_time to trips
-    @param flexbus_lat : current lat of the bus
-    @param flexbus_lng : current lng of the bus
-    @param second : current time
-    @param sequence : the sequence in which to visit the given locations
-    @param locations : the locations to be visited
-    @param new_trips : newly requested trips
-    @param unstarted_trips : trips that have not started but are not newly requested
-    @param started_trips : trips that have already started
-    @param new_trips_count : how many trips are new
-    @param full_trips_count : how many trips have not yet started
-    @return the order in which the stops are visited
-    """
-    sim_time = second
-    stop_order = []
-
-    sequence = stop_array[0].sequence
-
-    for stop in stop_array:
-        stop.sequence = sequence
-        stop.save()
-        sequence += 1
-        
-    for index in range(len(stop_array) - 1):
-        geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([stop_array[index].lat, stop_array[index].lng], [stop_array[index+1].lat, stop_array[index+1].lng])
-        stop_array[index + 1].visit_time = sim_time + travel_time
-        stop_array[index + 1].save()
-                
-        sim_time += travel_time
-
-        #Update the times for the trips that these stops represent
-        if stop_array[index + 1].trip: #if this stop is for a trip and not an intermediate stop, update this trip and the next trip
-            assign_time(stop_array[index + 1].trip, sim_time, stop_array[index + 1].type)
-            update_next_segment(stop_array[index + 1].trip)
-            
-    #Add a stoptime for returning to the gateway
-    geometry, travel_distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng], [stop_array[len(stop_array) - 1].lat, stop_array[len(stop_array) - 1].lng])
-    flexbus_stop = models.Stop.objects.create(flexbus = flexbus, lat = flexbus.subnet.gateway.lat, lng = flexbus.subnet.gateway.lng, sequence = sequence, visit_time = sim_time + travel_time)
-
-    for stop in stop_array:
-        print str(stop.lat) + ',' + str(stop.lng)
-
-    return stop_array
-
-@log_traceback
-def ga_optimize_route(second, flexbus):
-    """
-    Genetic Algorithm Optimization Routine
-    Given the current time and a bus, optimize the bus' route from the stops assigned to it.
-    @param second : the time
-    @param flexbus : a flexbus object
-    Returns the order and cost
-    """
-
-    flexbus_lat, flexbus_lng, diff_time = get_flexbus_location(flexbus, second)
-
-    #Get all the trips belonging to the bus
-    trips = models.TripSegment.objects.filter(flexbus = flexbus)
-    started_trips = trips.filter(start_time__lte = second, end_time__gt = second)
-    unstarted_trips = trips.filter(earliest_start_time__lte = second, end_time__gt = second, start_time__gt = second)
-    new_trips = trips.filter(earliest_start_time__lte = second, start_time = None)
-    new_trips.update(status = 2)
-                          
-    new_trips_count = new_trips.count()
-    full_trips_count = unstarted_trips.count()+ new_trips_count
-
-    trip_starts = []
-    trip_ends = []
-    #Get the start and end locations associated with those trips
-    for trip in new_trips:
-        trip_starts.append([trip.start_lat, trip.start_lng])
-        trip_ends.append([trip.end_lat, trip.end_lng])
-
-    for trip in unstarted_trips:
-        trip_starts.append([trip.start_lat, trip.start_lng])
-        trip_ends.append([trip.end_lat, trip.end_lng])
-
-    for trip in started_trips:
-        trip_ends.append([trip.end_lat, trip.end_lng])
-    
-    #Convert the list of trips into one long array
-
-    #The first half of the array is the list of starting locations
-    #and the second half o the array is the list of ending locations
-    locations = trip_starts
-    locations.extend(trip_ends)
-          
-    #Create initial variables for the optimizer
-    pop_size = 100 #Number of genes in each generation
-    num_iter = 1000 #Number of generations to run
-    num_stops = len(locations) #The number of stop
-
-    #Create an initial population with random sequences
-    pop = []
-    for k in range(pop_size):
-        pop.append(randperm(num_stops))
-
-    #Set the initial minimum to infinity
-    global_min = float('inf')
-    #Temporary variable
-    tmp_pop = []
-
-    #Run the GA
-    for iter in range(num_iter):
-        
-        total_dist = [] #The array of costs for each gene
-        for k in range(pop_size):
-            #Correct any issues with the orderting (i.e. fix issues with D/O's being visited before P/U's
-            pop[k] = fix_order(pop[k], full_trips_count)
-
-            total_dist.append(get_cost(flexbus_lat, flexbus_lng, second, pop[k], locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count))
-
-
-        #Find the minimum cost gene from this generation
-        min_dist = min(total_dist)
-        #If this generaitons minimum cost gene is the smallest encountered so far, save it.
-        if(global_min > min_dist):
-            global_min = min_dist
-            opt_rte = pop[total_dist.index(min_dist)]
-
-
-        ###################################
-        ### Randomize and Mutate
-        ####################################
-
-        #Generate a randome sequence of genes
-        rand_gene_order = randperm(pop_size)
-
-        ###Iterate through each gene in the generation
-        # Use the order defined by rand_gene_order, taking 5 genes at a time
-        for j in range(pop_size/5):
-            p = (j+1)*5
-            rand_entries = copy.copy(rand_gene_order[p-5:p])
-            rtes = []
-            dists = []
-            #Get the routes and costs of each of the 5 genes
-            for entry in rand_entries:
-                rtes.append(pop[entry])
-                dists.append(total_dist[entry])
-
-
-            #Take only the best gene from the set of five
-            #This is now saved as best_of_rtes
-            idx = dists.index(min(dists))
-            best_of_rtes = copy.copy(rtes[idx])
-
-            #Generate two random numbers for mutation purposes
-            #The numbers will be in the range of the number of stops
-            ins_pts = [int(random.random()*num_stops),  int(random.random()*num_stops)]
-    
-            I = min(ins_pts) #The smaller of the two random numbers
-            J = max(ins_pts) #The larger of the two random numbers
-
-            #For each best_of_rtes gene, perform 5 operations, as described below
-            for idx in range(5):
-
-                if idx == 0: #do nothing
-                    tmp_pop.append(best_of_rtes)
-
-                if idx == 1: #flip:  take all sequence between stops I and J, and reverse their order
-                    temp = copy.copy(best_of_rtes[I:J+1])
-                    temp.reverse()
-                    temp_best = copy.copy(best_of_rtes)
-                    temp_best[I:J+1] = temp
-                    tmp_pop.append(temp_best)
-                   
-                elif idx == 2: #Swap:  Swap the Ith and Jth elements of best_of_rtes
-                    tempI = copy.copy(best_of_rtes[I])
-                    tempJ = copy.copy(best_of_rtes[J])
-                    temp_best = copy.copy(best_of_rtes)
-                    temp_best[I] = tempJ
-                    temp_best[J] = tempI
-                    tmp_pop.append(temp_best)
-
-                elif idx == 3: #Slide:  Slide all the elements from I+1 to J down one slot.  Then put the Ith element in the Jth slot.
-                    tmp = copy.copy(best_of_rtes[I])
-                    temp_best = copy.copy(best_of_rtes)
-                    temp_best[I:J] = copy.copy(best_of_rtes[I+1:J+1])
-                    temp_best[J] = tmp
-                    tmp_pop.append(temp_best)
-                    
-                elif idx == 4: #Create a totally new permuation
-                    tmp_pop.append(randperm(num_stops))
-
-        #####################################
-        ###### End Randomizing and Mutating
-        #####################################
-
-        #Replace the old population with the new one one
-        pop = tmp_pop 
-        tmp_pop = []
-        
-    return flexbus, opt_rte, locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count
-
 @log_traceback
 def optimize_static_route(second, trip_segment):
     """
@@ -832,27 +522,29 @@ def simple_optimize_route(second, trip, flexbus):
         trip.flexbus = flexbus
         trip.save()
     
-    flexbus_lat, flexbus_lng, diff_time = get_flexbus_location(flexbus, second)
 
     previous_stops = models.Stop.objects.filter(flexbus = flexbus, visit_time__lt = second).order_by('visit_time')
-
     count = previous_stops.count() + 1
+    future_stops = models.Stop.objects.filter(flexbus = flexbus, visit_time__gt = second).order_by('visit_time')
 
-    future_stops = models.Stop.objects.filter(flexbus = flexbus, sequence__gte = count).order_by('visit_time')
+    this_stop = models.Stop.objects.filter(flexbus = flexbus, visit_time = second)
+    if this_stop.count() > 0:
+        this_stop = this_stop[0]
+        count = this_stop.sequence
+    else:
+        flexbus_lat, flexbus_lng, diff_time = get_flexbus_location(flexbus, second)
+        this_stop =  models.Stop.objects.create(flexbus = flexbus, visit_time = second, lat = flexbus_lat, lng = flexbus_lng, sequence = count, type = 0, trip = None)
+        for stop in future_stops:
+            stop.sequence += 1
+            stop.save()
 
-    for stop in future_stops:
-        stop.sequence += 1
-        stop.save()
+    import pdb
+    #pdb.set_trace()
 
-    this_stop =  models.Stop.objects.create(flexbus = flexbus, lat = flexbus_lat, lng = flexbus_lng, sequence = count, visit_time = second, type = 0, trip = None) 
 
     stop_array = [this_stop]
-    lats_array = [flexbus_lat]
-    lngs_array = [flexbus_lng]
     for stop in future_stops:
         stop_array.append(stop)
-        lats_array.append(stop.lat)
-        lngs_array.append(stop.lng)
    
     trip.status = 2
     trip.save()
@@ -862,108 +554,50 @@ def simple_optimize_route(second, trip, flexbus):
     shortest_distance = 'inf'
     shortest_i = 0
     shortest_j = 1
+    min_time_array  = None
 
     #Try every scenerio for entering the dropoff and pickup location without changing the rest of the order
-    for i in range(1, len(lats_array) + 1):
-        puinserted_lats = copy.copy(lats_array)
-        puinserted_lngs = copy.copy(lngs_array)
-        puinserted_lats.insert(i, trip.start_lat)
-        puinserted_lngs.insert(i, trip.start_lng)
-
-        for j in range(i + 1, len(puinserted_lngs) + 1):
-            doinserted_lats = copy.copy(puinserted_lats)
-            doinserted_lngs = copy.copy(puinserted_lngs)
-            doinserted_lats.insert(j, trip.end_lat)
-            doinserted_lngs.insert(j, trip.end_lng)
-            doinserted_lats.append(flexbus.subnet.gateway.lat)
-            doinserted_lngs.append(flexbus.subnet.gateway.lng)
-            total_cost = get_cost_from_array(i, j, stop_array, new_start, new_end)
-            total_distance = get_distance_from_array(doinserted_lats, doinserted_lngs)
+    for i in range(1, len(stop_array) + 1):
+        for j in range(i + 1, len(stop_array) + 2):
+            total_distance, time_array = get_cost_from_array(i, j, copy.copy(stop_array), new_start, new_end, second)
+            #total_distance = get_distance_from_array(doinserted_lats, doinserted_lngs)
             if total_distance < shortest_distance:
                 shortest_distance = copy.copy(total_distance)
                 shortest_i = i
                 shortest_j = j
-                  
-    lats_array.insert(shortest_i, trip.start_lat)
-    lats_array.insert(shortest_j, trip.end_lat)
-    lngs_array.insert(shortest_i, trip.start_lng)
-    lngs_array.insert(shortest_j, trip.end_lng)
+                min_time_array = time_array
+
+    import pdb
+    #pdb.set_trace()
+
     stop_array.insert(shortest_i, new_start)
     stop_array.insert(shortest_j, new_end)
 
+    index = 0
+    for stop in stop_array:
+        stop.visit_time = min_time_array[index]
+        stop.save()
+        index += 1
+
+
+    update_trip_details(trip, second)
     return flexbus, stop_array
 
 @log_traceback
-def heuristic_optimize_route(second, flexbus):
+def update_trip_details(trip, second):
     """
-    This is a test method built for experimentation.  It will either be integrated with the other optimizaton options or it will be deleted before 'release'
-    @param second : the time
-    @param flexbus : a flexbus object
-    Returns the order and cost
     """
+    stops = models.Stop.objects.filter(trip = trip, visit_time__gte = second)
+    for stop in stops:
+        if stop.type == 1:
+            trip.start_time = stop.visit_time
+        elif stop.type == 2:
+            trip.end_time = stop.visit_time
+        trip.save()
+    
+    update_next_segment(trip)        
 
-    flexbus_lat, flexbus_lng, diff_time = get_flexbus_location(flexbus, second)
-
-    #Get all the trips belonging to the bus
-    trips = models.TripSegment.objects.filter(flexbus = flexbus)
-    started_trips = trips.filter(start_time__lte = second, end_time__gt = second)
-    unstarted_trips = trips.filter(earliest_start_time__lte = second, end_time__gt = second, start_time__gt = second)
-    new_trips = trips.filter(earliest_start_time__lte = second, start_time = None)
-    new_trips.update(status = 2)
-                      
-
-    #IF the fifth position is a 1, this location is a pickup, if it is a 2, it is a drop off, if it is a 0 it is the bus location or the depot
-    #    [[stop1_time, stop1_lat, stop1_lng, stop1_trip_id, 1]
-    locations = [[second, flexbus_lat, flexbus_lng, None, 0]]
-    #Get the start and end locations associated with those trips
-
-    for trip in unstarted_trips:
-        locations.append([trip.start_time, trip.start_lat, trip.start_lng, trip.id, 1])
-        locations.append([trip.end_time, trip.end_lat, trip.end_lng, trip.id, 2])
-
-    for trip in started_trips:
-        locations.append([trip.end_time, trip.end_lat, trip.end_lng, trip.id, 2])
-
-    locations.sort()
-
-    for trip in new_trips:
-
-      lats_array = []
-      lngs_array = []
-      for idx in range(len(locations)):
-        lats_array.append(locations[idx][1])
-        lngs_array.append(locations[idx][2])
-
-      shortest_distance = 'inf'
-      shortest_i = 0
-      shortest_j = 1
-
-      #Try every scneario for entering the dropoff and pickup location without changing the rest of the order
-      for i in range(len(locations) + 1):
-          puinserted_lats = copy.copy(lats_array)
-          puinserted_lngs = copy.copy(lngs_array)
-          puinserted_lats.insert(i, trip.start_lat)
-          puinserted_lngs.insert(i, trip.start_lng)
-
-          for j in range(i + 1, len(puinserted_lngs) + 1):
-              doinserted_lats = copy.copy(puinserted_lats)
-              doinserted_lngs = copy.copy(puinserted_lngs)
-              doinserted_lats.insert(j, trip.end_lat)
-              doinserted_lngs.insert(j, trip.end_lng)
-              doinserted_lats.append(flexbus.subnet.gateway.lat)
-              doinserted_lngs.append(flexbus.subnet.gateway.lng)
-              total_distance = get_distance_from_array(doinserted_lats, doinserted_lngs)
-              if total_distance < shortest_distance:
-                  shortest_distance = total_distance
-                  shortest_i = i
-                  shortest_j = j
-                  
-      locations.insert(shortest_i,[None, trip.start_lat, trip.end_lng, trip.id, 1])
-      locations.insert(shortest_j,[None, trip.end_lat, trip.end_lng, trip.id, 2])
-
-    return 0
-        
-#    return flexbus, opt_rte, locations, new_trips, unstarted_trips, started_trips, new_trips_count, full_trips_count
+    return
 
 @log_traceback
 def generate_statistics(request):

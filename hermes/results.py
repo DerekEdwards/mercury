@@ -19,14 +19,14 @@ def get_passenger_results(request):
     vehicle_id = int(request.GET['vehicle_id'])
     vehicle  = models.FlexBus.objects.get(vehicle_id = vehicle_id)
     
-    trips = models.TripSegment.objects.filter(flexbus = vehicle)
+    trips = models.TripSegment.objects.filter(flexbus = vehicle).order_by('earliest_start_time')
     starts = []
     ends = []
     times = []
     for trip in trips:
         starts.append([trip.start_lat, trip.start_lng])
         ends.append([trip.end_lat, trip.end_lng])
-        times.append(trip.end_time - trip.earliest_start_time)
+        times.append([trip.earliest_start_time, trip.start_time, trip.end_time, trip.end_time - trip.earliest_start_time])
     
     stop_array = []    
     stops = models.Stop.objects.filter(flexbus = vehicle).order_by('visit_time')
@@ -151,15 +151,17 @@ def summary_of_results():
             
     total_travel_time = 0
     total_p2p_distance= 0
+    passengers_finished = 0
     passengers = models.Passenger.objects.all()
     for passenger in passengers:
         trips = passenger.tripsegment_set.all().order_by('trip_sequence')
-            
-        arrival_time = trips[trips.count() - 1].end_time
-        total_travel_time += (arrival_time - passenger.time_of_request)
-        total_p2p_distance += (utils.haversine_dist([passenger.start_lat, passenger.start_lng], [passenger.end_lat, passenger.end_lng]))
+        if trips[trips.count() -1].end_time < 10000:    
+            passengers_finished += 1
+            arrival_time = trips[trips.count() - 1].end_time
+            total_travel_time += (arrival_time - passenger.time_of_request)
+            total_p2p_distance += (utils.haversine_dist([passenger.start_lat, passenger.start_lng], [passenger.end_lat, passenger.end_lng]))
         
-    print 'Total Passengers Created:  ' + str(passengers.count())
+    print 'Total Passengers Created:  ' + str(passengers_finished)
     print 'Total Travel Time:  ' + str(total_travel_time)
     print 'Average Travel Time:  ' + str(total_travel_time/passengers.count())
     print 'Total Distance Traveled:  ' + str(total_p2p_distance)

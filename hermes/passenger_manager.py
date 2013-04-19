@@ -59,7 +59,7 @@ def get_survey_passengers(request):
                         views.optimize_static_route(second, trip)
                     else:
                         flexbus, stop_array = views.insert_trip(second, trip)
-                        order = views.simple_convert_sequence_to_locations(flexbus, second, stop_array)
+                        #order = views.simple_convert_sequence_to_locations(flexbus, second, stop_array)
             ##############
 
         if not ready:

@@ -50,20 +50,23 @@ def create_subnets():
         subnet.description = gateway.description + ' SUBNET'
         subnet.center_lat = gateway.lat
         subnet.center_lng = gateway.lng
+        subnet.max_driving_time = settings.DEFAULT_MAX_DRIVING_TIME
+        subnet.max_walking_time = settings.DEFAULT_MAX_WALKING_TIME
         subnet.radius = 2
         subnet.save()
         
 @log_traceback
 def create_busses():
     """
-    This function creats a single bus for each subnet.  
+    This function creats 4 buses for each subnet.  
     TODO: Consider whether or not to create a bus by default
     """
     subnets = models.Subnet.objects.all()
     id = 1
     for subnet in subnets:
-        flexbus, created = models.FlexBus.objects.get_or_create(vehicle_id = id, subnet = subnet)
-        id += 1
+        for i in range(4):
+            flexbus, created = models.FlexBus.objects.get_or_create(vehicle_id = id, subnet = subnet)
+            id += 1
 
 @log_traceback
 def initialize_simulation(request):

@@ -84,6 +84,10 @@ class Subnet(models.Model):
     description = models.CharField(max_length = 255, null = True)
     gateway = models.ForeignKey(Gateway, null = False)
 
+    #The maximum time a point can be away from the gateway and still be in the coverage area, measured in seconds
+    max_driving_time = models.IntegerField(null = False, default = 300)
+    max_walking_time = models.IntegerField(null = False, default = 300)
+
     #Optional
     center_lat = models.FloatField(max_length=25, null = True)
     center_lng = models.FloatField(max_length=25, null = True)
