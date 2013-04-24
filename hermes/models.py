@@ -5,7 +5,10 @@ class SystemFlags(models.Model):
     simulation_code : unique identifier for each time a simulation is run
     """
     simulation_code = models.IntegerField(null = False, default = 0)
-
+    
+    #there is a need for a global seconds definition
+    second = models.IntegerField(null = False, default = 0)
+    
 class SurveyPassenger(models.Model):
     """
     Survey Passengesr contain start/end location as well as times of request

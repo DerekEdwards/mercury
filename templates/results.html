@@ -15,6 +15,7 @@
 
     var greenIcon = new GIcon(G_DEFAULT_ICON);
     var redIcon = new GIcon(G_DEFAULT_ICON);
+    var busIcon = new GIcon(G_DEFAULT_ICON);
 
     function initialize() {
       if (GBrowserIsCompatible()) {
@@ -39,13 +40,15 @@
                var ends = message['ends'];
                var times = message['times'];
                var stops = message['stops'];
+               var second = message['second'];
+               var flexbus_location = message['flexbus_location']
     
                for (var i = 0; i < stops.length; i++) {
 		   points.push(new GLatLng(stops[i][0], stops[i][1]));
 	       }
                map.addOverlay(new GPolyline(points));
 
-               var html_data = "<b>Passenger Times:</b>"; 
+               var html_data = "<b>Passenger Times at second, " + second + ":</b>"; 
 	       
 	       for (var i = 0; i < starts.length; i++) {
 
@@ -60,7 +63,13 @@
 
 	           html_data = html_data + "<br>P" + i + ":  " + times[i][0] + ", " + times[i][1] + ", "  + times[i][2] + ", " + times[i][3];
 
-	       } 				   
+	       } 
+	       
+               busIcon.image = "https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=" + 'BUS' + "|0000FF|000000";
+	       var busMarkerOptions = { icon:busIcon };
+               map.addOverlay(new GMarker(new GLatLng(flexbus_location[0], flexbus_location[1]) ,busMarkerOptions));				   
+
+				   
 	      $('#passenger_times').html(html_data);
 				   
 				   

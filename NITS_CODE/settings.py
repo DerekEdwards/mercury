@@ -160,8 +160,8 @@ USE_SURVEY_PASSENGERS = True
 SURVEY_PASSENGER_FILE = "hermes/bin/bigTest.csv"
 CREATE_STATIC_TRIPS = False #used in views.py.  If we are debugging and don't to spend a lot of computation time creating static trips, set this to false
 
-DEFAULT_MAX_DRIVING_TIME = 300
-DEFAULT_MAX_WALKING_TIME = 300
+DEFAULT_MAX_DRIVING_TIME = 600 #seconds
+DEFAULT_MAX_WALKING_TIME = 600 #seconds
 
 OTP_SERVER_URL = 'http://localhost:8080/'
 OSRM_SERVER_URL = 'http://localhost:8001/'

@@ -62,9 +62,9 @@ def create_dynamic_trip(passenger, second, start_buses = None, end_buses = None)
     start_bus = None
     end_bus = None
     if start_buses:
-        start_bus = which_bus(start_buses, passenger, second)
+        start_bus = which_bus(start_buses, passenger, second, True)
     if end_buses:
-        end_bus = which_bus(end_buses, passenger, second)
+        end_bus = which_bus(end_buses, passenger, second, False)
     if not start_buses and not end_buses:
         return start_bus, end_bus
 
@@ -107,46 +107,63 @@ def insert_trip(second, trip_segment):
     @param second : seconds into the simulation
     @param trip_segment : trip object that has been inserted and is ready for optimization
     """
-    #TODO: create a settings entry to select the optimization scheme we want to use
     return simple_optimize_route(second, trip_segment, trip_segment.flexbus)
-    #return ga_optimize_route(second, trip_segment.flexbus)
-    #return heuristic_optimize_route(second, trip_segment.flexbus)
 
 @log_traceback
-def which_bus(busses, passenger, second):
+def which_bus(busses, passenger, second, first_mile):
     """
     Takes in a query of buses and determines which one will be finished with its route first.
     If no routes are finished within 30 minutes.  A new bus is dispatched.
     TODO: We should make this a smarter algorithm.  Do not simply put the passenger on the bus with the least burden.  This does not take into account the locatino of the passenger.
     @busses : a query of flexbus objects
+    @first_mile : if this is the first mile of a trip this is true, if this is the last mile, then this is false
     @second : the seconds into the simulation
     @return : the bus with the shortest total trip
     """
     min_bus = None
     min_time = float('inf');
+    min_cost = float('inf');
+ 
    
     for bus in busses:
+        if first_mile:
+            trip_geographic_mean  = find_geographic_average([[passenger.start_lat, passenger.start_lng], [bus.subnet.gateway.lat, bus.subnet.gateway.lng]])
+        else:
+            trip_geographic_mean  = find_geographic_average([[passenger.end_lat, passenger.end_lng], [bus.subnet.gateway.lat, bus.subnet.gateway.lng]])
+  
         #Get the trips for each bus
-        trips = models.TripSegment.objects.filter(flexbus = bus, end_time__gte = second, end_time__lt = 20000)
+        trips = models.TripSegment.objects.filter(flexbus = bus, end_time__gte = second, end_time__lt = 20000).order_by('-end_time')
         #If the bus has no trips, return this bus
         if trips.count() == 0:
             return bus
 
-        #If the bus has trips, save the trip which is scheduled to finish last.
-        last_trip = None
-        last_time = 0
-        for trip in trips:
-            if trip.end_time > last_time:
-                last_time = trip.end_time
-                last_trip = trip
+        #find geographic average of this bus's future stops
+        stops = models.Stop.objects.filter(flexbus = bus, visit_time__gte = second)
+        lat, lng, unused = get_flexbus_location(bus, second)
+        points = [[lat,lng]]
+        for stop in stops:
+            points.append([stop.lat,stop.lng])
+        geographic_mean = find_geographic_average(points)
 
-        #If this busses last trip is the earlist trip so far, save it
-        if (last_time - second) < min_time:
-            min_time = last_time - second
+        geographic_dist = utils.haversine_dist(trip_geographic_mean, geographic_mean)
+        #If the bus has trips, save the trip which is scheduled to finish last.
+        last_trip = trips[0]
+
+        #Every kilometer away counts as a point and every two minutes that a vehicle is from finishing its current load is a point
+        #this is a balance between geographic distance and time where every 2 minutes is the same as being a mile away.
+        cost = geographic_dist/1000 + (last_trip.end_time - second)/120
+        
+        if cost < min_cost:
+            min_cost = cost
             min_bus = bus
 
-    #If no bus is scheduld to be done in 30 minutes or there are > 19 passengers still waiting, create a new bus to handle this request
-    if min_time > 30*60 or trips.count() > 19:
+        #Check to find the min time, this will be used to see if the system needs an ew vehicle
+        if (last_trip.end_time - second) < min_time:
+            min_time = last_trip.end_time - second
+
+
+    #If no bus is scheduld to be done in 15 minutes
+    if min_time > 15*60:
         vehicles = models.FlexBus.objects.all()
         id = vehicles.count() + 1
         if len(busses) > 0:
@@ -156,6 +173,26 @@ def which_bus(busses, passenger, second):
         return flexbus
     else:
         return min_bus
+
+@log_traceback
+def find_geographic_average(points):
+    """
+    This function takes in an array of points of the the form [[lat,lng], [lat,lng], ... ]
+    The function finds the average lat and lng of all these points. It is used by the which_bus function has a heuristic method of finding a nearby bus without
+    exhaustively searching every option for assigning a passenger
+    @param points : array of points of the the form [[lat,lng], [lat,lng], ... ]
+    @return : a lat,lng of the geographic center of these points
+    """
+    lats_avg = 0.0
+    lngs_avg = 0.0
+    index = 0
+    
+    for point in points:
+        lats_avg += point[0]
+        lngs_avg += point[1]
+        index += 1
+    
+    return [lats_avg/index,lngs_avg/index]
 
 @log_traceback
 def get_candidate_vehicles_from_point_geofence(lat, lng):
@@ -518,7 +555,7 @@ def simple_optimize_route(second, trip, flexbus):
     #TODO:  This function will allow vehicles from other subnets to pickup the passenger even it the passenger is starting at a different Gateway
     if not flexbus:
         buses = get_candidate_vehicles_from_point_geofence(trip.start_lat, trip.start_lng)
-        flexbus = which_bus(buses, trip.passenger, second)
+        flexbus = which_bus(buses, trip.passenger, second, False)
         trip.flexbus = flexbus
         trip.save()
     

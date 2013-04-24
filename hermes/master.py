@@ -93,6 +93,7 @@ def initialize_simulation(request):
     simulation_code = SystemFlags.simulation_code
     simulation_code += 1
     SystemFlags.simulation_code = simulation_code
+    SystemFlags.second = 0
     SystemFlags.save()
     json_str = simplejson.dumps({"simulation_code":simulation_code})
     return HttpResponse(json_str)

@@ -4,8 +4,7 @@ from extra_utils.extra_shortcuts import render_response
 from extra_utils.variety_utils import log_traceback
 
 
-from hermes import models
-from hermes import utils
+from hermes import models, utils, views
 
 def index(request):
     """
@@ -16,6 +15,10 @@ def index(request):
     return render_response(request, 'results.html', {})
 
 def get_passenger_results(request):
+
+    SystemFlags = models.SystemFlags.objects.all()
+    SystemFlags = SystemFlags[0]
+        
     vehicle_id = int(request.GET['vehicle_id'])
     vehicle  = models.FlexBus.objects.get(vehicle_id = vehicle_id)
     
@@ -33,7 +36,11 @@ def get_passenger_results(request):
     for stop in stops:
         stop_array.append([stop.lat, stop.lng])
 
-    json_str = simplejson.dumps({"starts":starts, "ends":ends, "times":times, "stops":stop_array})
+    lat, lng, unused = views.get_flexbus_location(vehicle, SystemFlags.second)
+
+    flexbus_location = [lat, lng]
+    
+    json_str = simplejson.dumps({"starts":starts, "ends":ends, "times":times, "stops":stop_array, "flexbus_location":flexbus_location, "second":SystemFlags.second})
     return HttpResponse(json_str)
 
 

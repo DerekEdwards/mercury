@@ -32,6 +32,12 @@ def get_survey_passengers(request):
     simulation_code = int(request.POST['simulation_code'])
     second = int(request.POST['second'])
 
+    SystemFlags = models.SystemFlags.objects.all()
+    SystemFlags = SystemFlags[0]
+    SystemFlags.second = second
+    SystemFlags.save()
+   
+    
     ready = False
     while(not ready and second <= settings.SIMULATION_LENGTH):
         
@@ -64,18 +70,9 @@ def get_survey_passengers(request):
 
         if not ready:
             second += 1
-
-    ### Check to see if trips are ready to be inserted.  Any passengers created above will have trips here
-    ### This will also pull trips that were created earlier but weren't ready to be inserted
-    ### If not trips or passengers are ready at this second, increment the second and keep looking for trips in the future
-        #ready_trips = models.TripSegment.objects.filter(earliest_start_time__lte = second, status = 1)
-        #trips_array = []
-        #if ready_trips:
-        #    ready = True
-        #    for trip in ready_trips:
-        #        trips_array.append(trip.id);
-        #else:
-        #    second += 1
+            SystemFlags.second = second
+            SystemFlags.save()
+            
             
         trips_array = [2,4,3]
 
