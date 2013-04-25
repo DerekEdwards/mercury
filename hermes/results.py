@@ -14,6 +14,7 @@ def index(request):
     """
     return render_response(request, 'results.html', {})
 
+@log_traceback
 def get_passenger_results(request):
 
     SystemFlags = models.SystemFlags.objects.all()
@@ -21,8 +22,17 @@ def get_passenger_results(request):
         
     vehicle_id = int(request.GET['vehicle_id'])
     vehicle  = models.FlexBus.objects.get(vehicle_id = vehicle_id)
+    second = request.GET['second'] 
+ 
+    if second == 'NOW':
+        second = SystemFlags.second
+    elif int(second) > SystemFlags.second:
+        second = SystemFlags.second
+    else:
+        second = int(second)
+
+    trips = models.TripSegment.objects.filter(flexbus = vehicle, earliest_start_time__lte = second).order_by('earliest_start_time')
     
-    trips = models.TripSegment.objects.filter(flexbus = vehicle).order_by('earliest_start_time')
     starts = []
     ends = []
     times = []
@@ -32,15 +42,12 @@ def get_passenger_results(request):
         times.append([trip.earliest_start_time, trip.start_time, trip.end_time, trip.end_time - trip.earliest_start_time])
     
     stop_array = []    
-    stops = models.Stop.objects.filter(flexbus = vehicle).order_by('visit_time')
-    for stop in stops:
-        stop_array.append([stop.lat, stop.lng])
 
-    lat, lng, unused = views.get_flexbus_location(vehicle, SystemFlags.second)
+    lat, lng, unused = views.get_flexbus_location(vehicle, second)
 
     flexbus_location = [lat, lng]
     
-    json_str = simplejson.dumps({"starts":starts, "ends":ends, "times":times, "stops":stop_array, "flexbus_location":flexbus_location, "second":SystemFlags.second})
+    json_str = simplejson.dumps({"starts":starts, "ends":ends, "times":times, "stops":stop_array, "flexbus_location":flexbus_location, "second":second})
     return HttpResponse(json_str)
 
 

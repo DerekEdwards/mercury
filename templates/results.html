@@ -5,17 +5,14 @@
 <title>Plot Results</title>
 <script src="http://maps.google.com/maps?file=api&amp;v=2.x&amp;key=AIzaSyALOwoKz_Rw_ocZ9Cd8jyfUi3iNGTFzmT0" type="text/javascript"></script>
 <script src="/site_media/jquery.js" type="text/javascript"></script>
-
 <script type="text/javascript">
-    /* This isochrone generate is derived from http://sandropaganotti.com/generate-an-isochrone-map-using-google-maps-api/ */    
     var DEFAULT_LAT = 33.781002;
     var DEFAULT_LNG = -84.38942; 
-
     var points =  new Array();
-
     var greenIcon = new GIcon(G_DEFAULT_ICON);
     var redIcon = new GIcon(G_DEFAULT_ICON);
     var busIcon = new GIcon(G_DEFAULT_ICON);
+    var INTERVAL_STARTED = false;
 
     function initialize() {
       if (GBrowserIsCompatible()) {
@@ -28,12 +25,19 @@
     }
 
 
-    function get_passengers(vehicle_id){
-        $.get('/get_passenger_results/', {"vehicle_id":vehicle_id},
+    function stop(){
+        if(INTERVAL_STARTED){
+           clearInterval(intval);
+           INTERVAL_STARTED = false;
+        }
+    }
+
+    function get_passengers(vehicle_id, second){
+        $.get('/get_passenger_results/', {"vehicle_id":vehicle_id, "second":second},
         function(data){
+               stop();
 	       map.clearOverlays();
                var points =  new Array();
-
            
                var message = $.parseJSON(data);
 	       var starts = message['starts'];
@@ -52,30 +56,49 @@
 	       
 	       for (var i = 0; i < starts.length; i++) {
 
-	           greenIcon.image = "https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=" + i + "|00AA00|000000";
-		   var greenMarkerOptions = { icon:greenIcon };
+		   if(times[i][1] > second)
+		       greenIcon.image = "https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=" + i + "|00AA00|000000";
+		   else
+		       greenIcon.image = "https://chart.googleapis.com/chart?chst=d_map_xpin_letter&chld=pin_star|" + i + "|00AA00|000000|0000FF";
+
+                   var greenMarkerOptions = { icon:greenIcon };
 
                    redIcon.image = "https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=" + i + "|FF0000|000000";
 		   var redMarkerOptions = { icon:redIcon };
 	
-		   map.addOverlay(new GMarker(new GLatLng(starts[i][0], starts[i][1]),greenMarkerOptions));				   
-		   map.addOverlay(new GMarker(new GLatLng(ends[i][0], ends[i][1]), redMarkerOptions));				   
-
+		   if(times[i][2] > second){
+                       map.addOverlay(new GMarker(new GLatLng(starts[i][0], starts[i][1]),greenMarkerOptions));				   
+		       map.addOverlay(new GMarker(new GLatLng(ends[i][0], ends[i][1]), redMarkerOptions));				   
+                   }
 	           html_data = html_data + "<br>P" + i + ":  " + times[i][0] + ", " + times[i][1] + ", "  + times[i][2] + ", " + times[i][3];
 
 	       } 
 	       
-               busIcon.image = "https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=" + 'BUS' + "|0000FF|000000";
+               busIcon.image = "https://chart.googleapis.com/chart?chst=d_map_pin_icon&chld=bus|0000FF";
 	       var busMarkerOptions = { icon:busIcon };
                map.addOverlay(new GMarker(new GLatLng(flexbus_location[0], flexbus_location[1]) ,busMarkerOptions));				   
-
-				   
+              
+              var increment = document.getElementById('increment').value;
+	      second = (+second + +increment);
+              $('#second').val(second);			   
 	      $('#passenger_times').html(html_data);
+	      showAction();
 				   
 				   
         }
         );
-    }
+   };
+    
+    function showAction() {
+        if(INTERVAL_STARTED)
+           clearInterval(intval);
+        else
+           INTERVAL_STARTED = true;
+        var rate = document.getElementById('rate').value;
+	var vid = document.getElementById('flexbus').value;
+	var second = document.getElementById('second').value;
+        intval = setInterval( "get_passengers(" + vid + ", '" + second + "')", rate);
+    };
 
 </script>
 <style>
@@ -93,13 +116,22 @@ height:100%;
 }
 </style>
 </head>
-<body style="margin:0px; padding:0px; background: #DDDDDD;" onload="initialize()"  onunload="GUnload()">
+<body style="margin:0px; padding:0px; background: #DDDDDD;" onload="initialize()">
   <center>
       <div style="padding-top: 4px; padding-bottom: 4px;">
-          <label for="flexbus"/>     See Results for FlexBus:    </label>
+          <label for="rate"/>     Rate (ms):   </label>
+          <input type="text" id="rate" name="rate" size="5" maxlength="5" value="3000"/>
+	  <label for="increment"/>     Increment (s):    </label>
+          <input type="text" id="increment" name="rate" size="2" maxlength="5" value="20"/>
+	  <label for="flexbus"/>     See Results for FlexBus:    </label>
           <input type="text" id="flexbus" name="flexbus" size="3" maxlength="4" value="1"/>
+	  <label for="second"/>     Second:   </label>
+          <input type="text" id="second" name="second" size="5" maxlength="5" value="NOW"/>
 	  <input type="submit" value="Show Passengers"
-                 onclick="this.value='Woot!';get_passengers(document.getElementById('flexbus').value)"/>
+                 onclick="this.value='Woot!';showAction()"/>
+	  <input type="submit" value="Shut It Down! Shut it Down Now!!"
+                 onclick="stop()"/>
+
           <img id="loader" src="/site_media/loader.gif" style="display:none;"/>
      </div>
      <table><tr><td style="width:300px; vertical-align:top;">

@@ -79,7 +79,7 @@ def get_optimal_transit_times(toLocation, fromLocation, requestTime=None):
         waitingTime = itinerary['waitingTime']
         realWait = int(waitingTime + initialWait)
         #return walk, wait, ride times
-        return itinerary['walkTime'], realWait, itinerary['transitTime']
+        return itinerary['walkTime'], realWait, itinerary['transitTime'], initialWait
     else:
         error = json_response['error']
         msg = error['msg']
@@ -123,7 +123,8 @@ def get_optimal_vehicle_itinerary(toLocation, fromLocation):
     total_distance = json_response['route_summary']['total_distance']
     total_time = json_response['route_summary']['total_time']
 
-    return route_geometry, total_distance, total_time
+    #Added 15% to vehicle times.  These times returned by OSRM are optimistic
+    return route_geometry, total_distance, total_time*1.15
 
 @log_traceback
 def decode_line(encoded):

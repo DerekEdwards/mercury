@@ -17,6 +17,12 @@ def create_trips(passenger, second):
     @param second : the seconds count into the simulation
     """
 
+    #if the passenger's trip is within a five minute walk. Delete it!
+    walking_time = planner_manager.get_optimal_walking_time([passenger.start_lat,passenger.start_lng], [passenger.end_lat, passenger.end_lng])
+    if walking_time < 300:
+        passenger.delete()
+        return
+
     if settings.USE_CIRCULAR_SUBNET:
         # Get the busses for the passenger's starting subnet
         start_buses = get_candidate_vehicles_from_point_radius(passenger.start_lat, passenger.start_lng)
@@ -245,15 +251,11 @@ def within_coverage_area(lat, lng, subnet):
     #2 Check that we are not in a pocket
     geometry, distance, driving_time = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [subnet.gateway.lat, subnet.gateway.lng]) #TOLocation, FromLocation
     if driving_time > subnet.max_driving_time:
-        print 'Failed Driving Time'
-        print driving_time
         return False
 
     #3 Check that we are not within the walking distance
     walking_time = planner_manager.get_optimal_walking_time([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])
     if walking_time < subnet.max_walking_time:
-        print 'Failed Walking Time'
-        print walking_time
         return False
 
     #4 Check that this subnet's gateway is the closest gateway
@@ -263,8 +265,6 @@ def within_coverage_area(lat, lng, subnet):
             continue
         geometry, distance, time = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [gw.lat, gw.lng]) #TOLocation, FromLocation
         if time < driving_time:
-            print 'Failed closest GW'
-            print gw.description
             return False
 
     return True
@@ -278,8 +278,6 @@ def point_within_geofence(lat, lng, sides):
     @param lng : float longitude of point
     @param sides : a query of FencePost objects
     """
-
-
     sides_cnt = sides.count()
     if sides_cnt < 3:
         return False
@@ -311,21 +309,17 @@ def get_cost_from_array(i, j, stop_array, new_start, new_end, second):
     stop_array.insert(i, new_start)
     stop_array.insert(j, new_end)
 
-    print i,j
-    import pdb
-    #pdb.set_trace()
-
     points = []
     for stop in stop_array:
         points.append([stop.lat, stop.lng])
         
     vmt = get_distance_from_array2(points)
-    passenger_costs, cost_array = get_total_passenger_costs(stop_array, second)
+    passenger_costs, time_array = get_total_passenger_costs(stop_array, second, i, j)
     
-    return settings.ALPHA*vmt + settings.BETA*passenger_costs, cost_array
+    return settings.ALPHA*vmt + settings.BETA*passenger_costs, time_array
 
 @log_traceback
-def get_total_passenger_costs(stops, second):
+def get_total_passenger_costs(stops, second, i, j):
     """
     Given an array of stops.  Look at the stops that are drop offs, for each drop off determine the total time for this trip.  Sum all of the trip times
     @param points : an array of stops
@@ -339,15 +333,18 @@ def get_total_passenger_costs(stops, second):
     visit_times = [total_time]
     for index in range(len(points) - 1):
         geometry, distance, time =  planner_manager.get_optimal_vehicle_itinerary(points[index + 1], points[index]) #TOLocation, FromLocation
+        if stops[index+1].type and time > 30: #for types 1 and 2, (i.e., these stops are drop offs or pickups, add 20 seconds for loading/unloading/uturning etc, the time>30 handles situations where we are not moving.  We shouldn't penalize for loading/unloading 20 seconds for every single passenger.
+            time += 20
         total_time += time
         visit_times.append(total_time)
 
     index = 0
     total_passenger_time = 0
+    #TODO: Take into account the initial wait of the passenger.  Meaning if we drop the passenger of to catch a train, but it is 20 min until the next train, the optimizer should know that
     for stop in stops:
         if stop.type == 2: #this is a dropoff
             end_time = visit_times[index]
-            total_time_for_trip = end_time - stop.trip.earliest_start_time
+            total_time_for_trip = end_time - stop.trip.earliest_start_time 
             total_passenger_time += total_time_for_trip
         index += 1
 
@@ -427,7 +424,7 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
     @return a triple representing the lat and lng of the vehicles as well as what percentage of the trip the bus has completed between he previous and next stops
     """
     if flexbus_stops == None:
-        flexbus_stops = models.Stop.objects.filter(flexbus = flexbus).order_by('sequence')
+        flexbus_stops = models.Stop.objects.filter(flexbus = flexbus).order_by('visit_time')
 
     next_stop = flexbus_stops.filter(visit_time__gt = second)
 
@@ -436,7 +433,7 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
     else:
         return flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng, 0
 
-    last_stop = flexbus_stops.filter(visit_time__lte = second)
+    last_stop = flexbus_stops.filter(visit_time__lte = second).order_by('visit_time')
     
     if last_stop.count():
         last_stop = last_stop[last_stop.count() - 1]
@@ -456,7 +453,7 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
     percent_complete = float(second - last_stop_time)/float(next_stop.visit_time - last_stop_time) 
 
     geometry, distance, travel_time = planner_manager.get_optimal_vehicle_itinerary([next_stop.lat, next_stop.lng], [last_stop.lat, last_stop.lng])
-
+    
     #The flexbus is between two points that are a trivial distance apart
     if distance < 10: 
         return last_stop.lat, last_stop.lng, 0
@@ -525,7 +522,7 @@ def optimize_static_route(second, trip_segment):
     
     trip_time = datetime.datetime(year = settings.SIMULATION_START_YEAR, month = settings.SIMULATION_START_MONTH, day = settings.SIMULATION_START_DAY, hour = hours, minute = minutes, second = seconds)
 
-    walking_time, waiting_time, riding_time = planner_manager.get_optimal_transit_times([trip_segment.end_lat, trip_segment.end_lng], [trip_segment.start_lat, trip_segment.start_lng], trip_time)
+    walking_time, waiting_time, riding_time, initial_wait = planner_manager.get_optimal_transit_times([trip_segment.end_lat, trip_segment.end_lng], [trip_segment.start_lat, trip_segment.start_lng], trip_time)
 
     total_time = walking_time + waiting_time + riding_time
 
@@ -616,13 +613,27 @@ def simple_optimize_route(second, trip, flexbus):
         stop.save()
         index += 1
 
+    update_trips(flexbus, second)
 
-    update_trip_details(trip, second)
     return flexbus, stop_array
+
+@log_traceback
+def update_trips(flexbus, second):
+    """
+    Update all the trips assigned to this bus with respect to changes made at this second.
+    @param flexbus : the flexbus that just had a trip added
+    @param second : simulation time
+    """
+    trips = models.TripSegment.objects.filter(flexbus = flexbus, earliest_start_time__lte=second, end_time__gte=second)
+    for trip in trips:
+        update_trip_details(trip, second)
 
 @log_traceback
 def update_trip_details(trip, second):
     """
+    Update the details for given trip at this second.  Also update any future legs of this trip
+    @param trip : the trip that needs to be updated
+    @param second : simulation time
     """
     stops = models.Stop.objects.filter(trip = trip, visit_time__gte = second)
     for stop in stops:
