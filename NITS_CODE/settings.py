@@ -158,6 +158,9 @@ BETA = 1 #Weight associated with Passenger costs in cost function
 
 USE_SURVEY_PASSENGERS = True
 SURVEY_PASSENGER_FILE = "hermes/bin/bigTest.csv"
+DELETE_SURVEY_PASSENGERS = False #We delete and reload the survey passengers each time
+PRESCREEN_SURVEY_PASSENGERS = False #We reconcile passengers that are outside the transit footprint
+
 CREATE_STATIC_TRIPS = False #used in views.py.  If we are debugging and don't to spend a lot of computation time creating static trips, set this to false
 
 DEFAULT_MAX_DRIVING_TIME = 600 #seconds
@@ -173,4 +176,4 @@ USE_ISOCHRONE_SUBNET = True
 USE_CIRCULAR_SUBNET = False
 CIRCULAR_SUBNET_RADIUS = 1000 #meters
 
-SIMULATION_LENGTH = 120*60 #seconds
+SIMULATION_LENGTH = 3600*4 #seconds

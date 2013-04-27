@@ -20,6 +20,10 @@ urlpatterns = patterns('',
     url('^push_isochrone/$', 'hermes.isochrone_manager.push_isochrone', name="push_isocrhone"),
     url('^clear_isochrones/$', 'hermes.isochrone_manager.clear_all_isochrones', name="clear_all_isochrones"),                  
     url('^results/$', 'hermes.results.index', name="results"),
-    url('^get_passenger_results/$', 'hermes.results.get_passenger_results', name="get_passenger_results")
+    url('^get_passenger_results/$', 'hermes.results.show_live_map', name="show_live_map"),
+    url('^summary/$', 'hermes.results.show_summary', name="summary"),
+    url('^get_summary/$', 'hermes.results.get_summary_data', name="get_summary_data"),
+    url('^survey/$', 'hermes.results.show_survey_passengers', name="show_survey_passengers"),
+    url('^get_survey_passengers/$', 'hermes.results.get_survey_data', name="get_survey_data")
 
 )

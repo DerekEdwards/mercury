@@ -13,8 +13,9 @@ def clear_data():
     This function is called to clear survey_passenger data, passengers_in_transit, all trips, stops, vehicles and gateways from the db.
     The difference between survey_passengers and passengers is that survey passengers represent only the start, end, and trip time for passengers collected from asurvey.  The passenger field is created for passengers after they have made a request.
     """
-    survey_passengers = models.SurveyPassenger.objects.all()
-    survey_passengers.delete()
+    if settings.DELETE_SURVEY_PASSENGERS:
+        survey_passengers = models.SurveyPassenger.objects.all()
+        survey_passengers.delete()
     passengers = models.Passenger.objects.all()
     passengers.delete()
     trips = models.TripSegment.objects.all()
@@ -82,11 +83,12 @@ def initialize_simulation(request):
     create_subnets()
     print 'Creating Busses...'
     create_busses()
-    if settings.USE_SURVEY_PASSENGERS:
+    if settings.USE_SURVEY_PASSENGERS and settings.DELETE_SURVEY_PASSENGERS:
         print 'Uploading Survey Passengers'
         passenger_manager.load_survey_passengers()
         print 'Done loading survey passengers' 
-
+        if settings.PRESCREEN_PASSENGERS: 
+            passenger_manager.prescreen_passengers()
     #Update the simulation code
     SystemFlags = models.SystemFlags.objects.all()
     SystemFlags = SystemFlags[0]

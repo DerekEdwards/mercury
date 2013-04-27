@@ -17,7 +17,7 @@ var GEN_PASSENGERS = false; //If true, we are waiting for Python to return from 
 var READY_TO_INS_TRIPS = false; //If true, we have finished generating passengers and are ready to insert trips into the system
 var INS_TRIPS = false; //If true, we are waiting for Python to return from inserting trips into the system
 var simulation_code; //Each simulation gets a unique simulation code
-var simulation_length = 120*60; //How long the simulation will be run in seconds
+var simulation_length = 3600*4; //How long the simulation will be run in seconds
 var passengers_per_second = .05; //For random passenger generation mode, this is the rate that passengers are make trip requests
 var passenger_count;
 var ready_trips;

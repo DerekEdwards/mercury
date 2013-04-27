@@ -40,7 +40,7 @@ def create_trips(passenger, second):
     if not start_buses and not end_buses: #This is a fully static trip
         if settings.CREATE_STATIC_TRIPS: #If we are tracking fully static trips, create the trip and store it in the db
             create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 0, earliest_start_time = second)
-        else: #if we are not creating fully static trips, delete this passenger from consideration
+        else: #if we are not creating fully static trips, delete this passenger from consideration.
             passenger.delete()
         
     elif start_buses and (not end_buses): #The first leg is DRT, the rest of the trip is Static
@@ -249,8 +249,9 @@ def within_coverage_area(lat, lng, subnet):
         return False
 
     #2 Check that we are not in a pocket
-    geometry, distance, driving_time = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [subnet.gateway.lat, subnet.gateway.lng]) #TOLocation, FromLocation
-    if driving_time > subnet.max_driving_time:
+    geometry, distance, driving_time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])#TOLocation, FromLocation
+    geometry, distance, driving_time_from = planner_manager.get_optimal_vehicle_itinerary([subnet.gateway.lat, subnet.gateway.lng], [lat,lng])#TOLocation, FromLocation
+    if driving_time_to > subnet.max_driving_time or driving_time_from > subnet.max_driving_time:
         return False
 
     #3 Check that we are not within the walking distance
@@ -263,8 +264,9 @@ def within_coverage_area(lat, lng, subnet):
     for gw in gateways:
         if gw == subnet.gateway:
             continue
-        geometry, distance, time = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [gw.lat, gw.lng]) #TOLocation, FromLocation
-        if time < driving_time:
+        geometry, distance, time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [gw.lat, gw.lng]) #TOLocation, FromLocation
+        geometry, distance, time_from = planner_manager.get_optimal_vehicle_itinerary([gw.lat, gw.lng], [lat,lng]) #TOLocation, FromLocation
+        if (time_to + time_from) < (driving_time_to + driving_time_from):
             return False
 
     return True
@@ -536,7 +538,7 @@ def optimize_static_route(second, trip_segment):
 
     update_next_segment(trip_segment)
     
-    return
+    return True 
 
 @log_traceback    
 def simple_optimize_route(second, trip, flexbus):

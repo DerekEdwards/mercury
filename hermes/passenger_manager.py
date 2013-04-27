@@ -6,7 +6,7 @@ from django.http import HttpResponse
 from django.db import connection
 
 from NITS_CODE import settings
-from hermes import models, views
+from hermes import models, views, planner_manager, utils
 
 @log_traceback
 def get_passengers(request):
@@ -65,8 +65,21 @@ def get_survey_passengers(request):
                         views.optimize_static_route(second, trip)
                     else:
                         flexbus, stop_array = views.insert_trip(second, trip)
-                        #order = views.simple_convert_sequence_to_locations(flexbus, second, stop_array)
-            ##############
+        ##############
+        ##############
+        ##This has been moved from script
+        ##############
+        ready_trips = models.TripSegment.objects.filter(earliest_start_time__lte = second, status = 1)
+        if ready_trips:
+            ready = True
+            for trip in ready_trips:
+                if trip.static:
+                    views.optimize_static_route(second, trip)
+                else:
+                    flexbus, stop_array = views.insert_trip(second, trip)
+        ##############
+
+
 
         if not ready:
             second += 1
@@ -211,7 +224,6 @@ def insert_survey_passengers(file_path):
     return
 
 
-
 @log_traceback
 def load_survey_passengers():
     """
@@ -220,3 +232,73 @@ def load_survey_passengers():
     """
     insert_survey_passengers(settings.SURVEY_PASSENGER_FILE)
     return True
+
+
+def find_closest_gateway([lat,lng]):
+    gateways = models.Gateway.objects.all()
+    closest_gw = None
+    distance = float('inf')
+    for gw in gateways:
+        temp_dist = haversine_dist([lat,lng], [gateway.lat, gateway.lng])
+        if temp_dist < distance:
+            distance = temp_dif
+            closest_gw = gw
+    return closest_gw
+        
+
+@log_traceback
+def prescreen_passengers():
+    """
+    Some passenger trips exist outside of the Transit Footprint.
+    We don't want to ignore these trips, because a portion of them can be handled by the transit system.
+    We still want to simulate that part of the trip.
+    Here is the algorithm to adapt those trips:
+    If a trip cannot be serviced by the transit system simulated here.  
+    1) Change the origin of the trip to be the nearest marta station of the trip.
+       If this solves the problem, we are done.
+    2)  If 1) did not work, set the original location back to what it was. and set the destinatino location to be the nearest
+        rails tation to teh destinatino 
+    3)  If 2) did not work, seth both the origin and destination to be the nearest rail stations.
+    
+    TODO:  Right now this just deletes the trip if it is outside the transit footprint.  This may be OK if most trips are within the boundary, but this should be changed.
+    """
+    survey_passengers = models.SurveyPassenger.objects.all()
+    survey_count = survey_passengers.count()
+    failures = 0
+    index = 0
+    for passenger in survey_passengers:
+        current_time = passenger.time_of_request
+        hours = int(current_time/3600)
+        minutes = int((current_time - (hours*3600))/60)
+        seconds = current_time - (minutes*60) - (hours*3600)
+        trip_time = datetime.datetime(year = settings.SIMULATION_START_YEAR, month = settings.SIMULATION_START_MONTH, day = settings.SIMULATION_START_DAY, hour = hours, minute = minutes, second = seconds)
+
+        walk, wait, ride, initial_wait = planner_manager.get_optimal_transit_times([passenger.end_lat, passenger.end_lng], [passenger.start_lat, passenger.start_lng], trip_time, 0)
+
+        if not walk: #This trip is not possible given the transit schedule
+            failures += 1
+            start_gw = find_closest_gateway([passenger.start_lat, passenger.start_lng])
+            walk, wait, ride, initial_wait = planner_manager.get_optimal_transit_times([passenger.end_lat, passenger.end_lng], [start_gw.lat, start_gw.lng], trip_time, 0)
+            if walk: #Changing the start location helped
+                passenger.start_lat = start_gw.lat
+                passenger.start_lng = start_gw.lng
+                passenger.save()
+            else: #Changing the start location DID NOT help
+                end_gw = find_closest_gateway([passenger.end_lat, passenger.end_lng])
+                walk, wait, ride, initial_wait = planner_manager.get_optimal_transit_times([end_gw.lat, end_gw.lng], [passenger.start_lat, passenger.start_lng], trip_time, 0)
+                if walk: #Changing the end_location helped
+                    passenger.end_lat = end_gw.lat
+                    passenger.end_lng = end_gw.lng
+                    passenger.save()
+                else: #Both locations needed to be changed.  Let's hope this doesn't happen too much
+                    passenger.start_lat = start_gw.lat
+                    passenger.start_lng = start_gw.lng
+                    passenger.end_lat = end_gw.lat
+                    passenger.end_lng = end_gw.lng
+                    passenger.save()
+           
+        index += 1
+        print index
+
+    print 'Falures:  ' + str(failures)
+    print 'Total Before Failures:  ' + str(survey_count)
