@@ -1,0 +1,122 @@
+<html>
+<head>
+<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+<meta http-equiv="content-type" content="text/html; charset=UTF-8"/>
+<title>Summary of Results</title>
+<script src="http://maps.google.com/maps?file=api&amp;v=2.x&amp;key=AIzaSyALOwoKz_Rw_ocZ9Cd8jyfUi3iNGTFzmT0" type="text/javascript"></script>
+<script src="/site_media/jquery.js" type="text/javascript"></script>
+<script type="text/javascript">
+    var DEFAULT_LAT = 33.781002;
+    var DEFAULT_LNG = -84.38942; 
+    var points =  new Array();
+    var greenIcon = new GIcon(G_DEFAULT_ICON);
+    var redIcon = new GIcon(G_DEFAULT_ICON);
+
+    function initialize() {
+      if (GBrowserIsCompatible()) {
+        map = new GMap2(document.getElementById("map_canvas"));
+        map.setCenter(new GLatLng(DEFAULT_LAT, DEFAULT_LNG), 13);
+        geocoder = new GClientGeocoder();
+        getSummary();
+    
+    
+      }
+    }
+
+
+    function getSummary(){
+        $.get('/get_summary/', {},
+        function(data){
+	       map.clearOverlays();
+               var points =  new Array();
+           
+               var message = $.parseJSON(data);
+	       var completed_passenger_count = message['completed_passenger_count'];
+               var VMT = message['VMT'];
+               var starts = message['starts'];
+               var start_static = message['start_static'];
+               var ends = message['ends'];
+               var end_static = message['end_static'];
+               var passenger_count = message['passenger_count'];
+               var avg_distance = message['avg_distance'];
+               var avg_mph = message['avg_mph'];
+               var avg_time = message['avg_time'];
+               var VMT = message['VMT'];
+               var vehicle_count = message['vehicle_count'];
+               var vehicle_avg_VMT = message['vehicle_avg_VMT'];
+
+               var html_data = "<b>Summary:</b>"; 
+               html_data += "<br><br>Passenger Data:"
+               html_data += "<br>Passenger Count:      " + starts.length;
+               html_data += "<br>Completed Trips:      " + completed_passenger_count;
+               html_data += "<br>Avg. Time (s):        " + avg_time;
+               html_data += "<br>Avg. Distance (m):    " + avg_distance;
+               html_data +="<br>Avg. Speed (mph):      " + avg_mph;
+               html_data +="<br>------------------------------"
+               html_data +="<br><br>Vehicle Data:"
+               html_data +="<br>Total Vehicles Used:   " + vehicle_count;
+               html_data +="<br>Total Fleet VMT (m):   " + VMT;
+               html_data +="<br>Avg. Vehicle VMT (m):  " + vehicle_avg_VMT;
+    
+	       html_data +="<br>------------------------------"
+               html_data +="<br><br>Combined:"
+               html_data +="<br>FlexBus Miles per Psgr:   " + "Not yet Available";
+               html_data +="<br>Static Miles per Psgr:    " + "Not yet Available";
+               html_data +="<br>Total Miles per Psgr:     " + "Not yet Available";
+
+	       for (var i = 0; i < starts.length; i++) {
+
+		   if (!start_static[i])
+		       greenIcon.image = "https://chart.googleapis.com/chart?chst=d_map_xpin_letter&chld=pin_star|" + i + "|00AA00|000000|0000FF";
+	           else
+		       greenIcon.image = "https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=" + i + "|00AA00|000000";
+		   var greenMarkerOptions = { icon:greenIcon };
+
+		   if (!end_static[i])
+	               redIcon.image = "https://chart.googleapis.com/chart?chst=d_map_xpin_letter&chld=pin_star|" + i + "|FF0000|000000|0000FF";
+		   else
+                       redIcon.image = "https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=" + i + "|FF0000|000000";
+		   var redMarkerOptions = { icon:redIcon };
+			   
+                   map.addOverlay(new GMarker(new GLatLng(starts[i][0], starts[i][1]),greenMarkerOptions));				   
+		   map.addOverlay(new GMarker(new GLatLng(ends[i][0], ends[i][1]), redMarkerOptions));				   
+
+	       } 
+	      $('#passenger_times').html(html_data);	       
+	}
+        );
+   };
+    
+  
+</script>
+<style>
+table,td,th
+{
+border:0px solid black;
+}
+table
+{
+width:100%;
+}
+th
+{
+height:100%;
+}
+</style>
+</head>
+<body style="margin:0px; padding:0px; background: #DDDDDD;" onload="initialize()">
+  <center>
+     <table><tr><td style="width:300px; vertical-align:top;">
+     <div id="passenger_times" syle="width:300px;">
+     <b>Summary:<b>
+       </div>
+	 </td>
+     <td style="width:1000px;">
+       <div id="map_canvas" style="width:1000px; height:800px; border: 3px solid rgb(51, 51, 51);"></div>
+     </td></tr>
+     </table>
+  </center>
+  <textarea id="txt1" style="display:none;"></textarea>
+  <div id="map_text" style="width:30%; height:800px; float: left;"></div>
+</body>
+</html>
