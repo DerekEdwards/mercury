@@ -53,7 +53,7 @@ def get_survey_passengers(request):
             ## Create Trips for these passengers
             ###########################
             views.create_trips(new_passenger, second)
-
+            
             ##############
             ##This has been moved from script
             ##############
@@ -234,7 +234,7 @@ def load_survey_passengers():
     return True
 
 
-def find_closest_gateway([lat,lng]):
+def find_closest_gateway(lat,lng):
     gateways = models.Gateway.objects.all()
     closest_gw = None
     distance = float('inf')

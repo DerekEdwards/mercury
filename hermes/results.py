@@ -1,8 +1,9 @@
+import os, datetime
+
 from django.utils import simplejson
 from django.http import HttpResponse
 from extra_utils.extra_shortcuts import render_response
 from extra_utils.variety_utils import log_traceback
-
 
 from hermes import models, utils, views
 
@@ -243,4 +244,26 @@ def summary_of_results():
     print 'Total Distance Traveled:  ' + str(total_p2p_distance)
     print 'Average Distance Traveled:  ' + str(total_p2p_distance/passengers.count())
 
+@log_traceback
+def save_data(request):
+    """
+    After a simulation is run, take dump of the db.
+    TODO:  This functions contains some hardcoding that could be moved out.
+    """
+    gw = models.Gateway.objects.get(gateway_id = 8)
+    subnet = models.Subnet.objects.get(gateway = gw)
+    time = datetime.datetime.now()
+    target_dir = '/home/derek/Code/results/'
+    db_name = 'midtown_11thru2_driving_' + str(subnet.max_driving_time) + "_walking_" + str(subnet.max_walking_time) + '_' + str(time.date()) + '-' + str(time.time()) + '.sql'
+
+    os.system("mysqldump -uroot -ppword NITS > " + target_dir + db_name)    
     
+    subnet.max_driving_time += 120
+    subnet.save()
+
+    if subnet.max_driving_time < 901:
+        json_str = simplejson.dumps({"result":True})
+    else:
+        json_str = simplejson.dumps({"result":False})
+
+    return HttpResponse(json_str)

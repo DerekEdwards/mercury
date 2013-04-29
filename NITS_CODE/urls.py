@@ -24,6 +24,7 @@ urlpatterns = patterns('',
     url('^summary/$', 'hermes.results.show_summary', name="summary"),
     url('^get_summary/$', 'hermes.results.get_summary_data', name="get_summary_data"),
     url('^survey/$', 'hermes.results.show_survey_passengers', name="show_survey_passengers"),
-    url('^get_survey_passengers/$', 'hermes.results.get_survey_data', name="get_survey_data")
+    url('^get_survey_passengers/$', 'hermes.results.get_survey_data', name="get_survey_data"),
+    url('^save_data/$', 'hermes.results.save_data', name="save_data")
 
 )

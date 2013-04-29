@@ -12,12 +12,13 @@ in the Python views.
 //Global Variables
 //TODO: identify which of these can be moved to a central confiuration file
 var seconds = 0; //The number of seconds into the simulation.
+var master_interval;
 var INITIALIZING = true;
 var GEN_PASSENGERS = false; //If true, we are waiting for Python to return from Generating Passengers
 var READY_TO_INS_TRIPS = false; //If true, we have finished generating passengers and are ready to insert trips into the system
 var INS_TRIPS = false; //If true, we are waiting for Python to return from inserting trips into the system
 var simulation_code; //Each simulation gets a unique simulation code
-var simulation_length = 3600*4; //How long the simulation will be run in seconds
+var simulation_length; //How long the simulation will be run in seconds
 var passengers_per_second = .05; //For random passenger generation mode, this is the rate that passengers are make trip requests
 var passenger_count;
 var ready_trips;
@@ -35,6 +36,7 @@ function initialize_simulation_data(){
 	       simulation_code = message.simulation_code
 	       INITIALIZING = false;
 	       html_data = $('#infoWindow').html();
+	       simulation_length = +message['simulation_length'];
 	       $('#infoWindow').html(html_data + '<br>Finished Clearing Old Data, simulation code is: ' + message.simulation_code);
 	       }
 	  );
@@ -102,6 +104,25 @@ function insert_trips(trip_id){
     return;
 }
 
+/*save_data
+After the simulation is done, dump the database.
+*/
+function save_data(){
+    $.post('/save_data/', {},
+	   function(data){
+	       var message = $.parseJSON(data);
+	       result = message['result'];
+	       if(result){
+		   initialize();
+	       }
+	       else{
+		   alert('All simulations are over!');
+	       }
+	   }
+	  );
+    return;
+
+}
 
 /*master
 This the main state machine controller for the NITS simulator.  Eventually this can be used to provide more indepth control to the end user. (Such as stopping/starting the simulation on command.)  A state machine type of system is used to get around the asynchronous nature of javascript/http calls  
@@ -125,6 +146,7 @@ function master(){
 	clearInterval(master_interval);
 	var html_data = $('#infoWindow').html(); 
 	$('#infoWindow').html(html_data + '<br>This is the last time that the script will run.  The simulation is over...');  
+	save_data(); 
     }
 
     if(GEN_PASSENGERS) 
@@ -142,7 +164,11 @@ function master(){
 		ready_trips = [];
 		console.log('done inserting trips.  Ready to move on to the next second');
 		if(last_time){
-		    console.log('these passengers will never be inserted');
+		   var html_data = $('#infoWindow').html(); 
+		    $('#infoWindow').html(html_data + '<br>Saving the data!<br><b>');  
+                   console.log('these passengers will never be inserted');
+		   //save_data(); 
+		    
 		}
 		else if(!INITIALIZING){
 		    generate_passengers(passengers_per_second, simulation_code, seconds);
@@ -159,8 +185,15 @@ This is what kicks off the state machine
 initialize_simulation_data removes any data from the previous iteration and creates a fresh set, 
 and the next line sets an interval that checks the state every 100 milliseconds and performs the appropriate action
 */
-initialize_simulation_data();
-var master_interval = setInterval(function(){master()},1000);
-
+function initialize(){
+    seconds = 0;
+    INITIALIZING = true;
+    GEN_PASSENGERS = false; //If true, we are waiting for Python to return from Generating Passengers
+    READY_TO_INS_TRIPS = false; //If true, we have finished generating passengers and are ready to insert trips into the system
+    INS_TRIPS = false; //If true, we are waiting for Python to return from inserting trips into the system
+    
+    initialize_simulation_data();
+    master_interval = setInterval(function(){master()},1000);
+}
 
 

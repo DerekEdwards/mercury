@@ -85,6 +85,10 @@ class Subnet(models.Model):
     subnet_type = models.IntegerField(null = False, default = 1)
     subnet_id = models.IntegerField(null = False)
     description = models.CharField(max_length = 255, null = True)
+
+    #Simulations across an entire city can be time-consuming.  Deactivating this boolean will prevent trips within this subnet from being simulated, but the presense of this subnet will still be be used to when determing which subnet a passenger belongs to.
+    active_in_study = models.BooleanField(null = False, default = False)
+
     gateway = models.ForeignKey(Gateway, null = False)
 
     #The maximum time a point can be away from the gateway and still be in the coverage area, measured in seconds

@@ -125,8 +125,8 @@ def get_optimal_vehicle_itinerary(toLocation, fromLocation):
     total_distance = json_response['route_summary']['total_distance']
     total_time = json_response['route_summary']['total_time']
 
-    #Added 15% to vehicle times.  These times returned by OSRM are optimistic
-    return route_geometry, total_distance, total_time*1.15
+    #Added 80% to vehicle times.  These times returned by OSRM are optimistic.  This puts the number more in line with Google Maps results
+    return route_geometry, total_distance, total_time*1.8
 
 @log_traceback
 def decode_line(encoded):

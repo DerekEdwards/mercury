@@ -43,26 +43,29 @@ def create_subnets():
     """
     gateways = models.Gateway.objects.all()
     print 'There are ' + str(gateways.count()) + ' rail stations.'
-    id = 1
+    
     for gateway in gateways:
-        subnet,created = models.Subnet.objects.get_or_create(gateway = gateway, subnet_id = id, setting1 = 1, setting2 = 1, setting3 = 1, setting4 = 1)
-        subnet.subnet_type = 1
-        id += 1
+        subnet,created = models.Subnet.objects.get_or_create(gateway = gateway, subnet_id = gateway.gateway_id)
         subnet.description = gateway.description + ' SUBNET'
         subnet.center_lat = gateway.lat
         subnet.center_lng = gateway.lng
-        subnet.max_driving_time = settings.DEFAULT_MAX_DRIVING_TIME
-        subnet.max_walking_time = settings.DEFAULT_MAX_WALKING_TIME
+        if created:
+            subnet.max_driving_time = settings.DEFAULT_MAX_DRIVING_TIME
+            subnet.max_walking_time = settings.DEFAULT_MAX_WALKING_TIME
+        
+        if subnet.subnet_id == 8:
+            subnet.active_in_study = True
+
         subnet.radius = 2
         subnet.save()
         
 @log_traceback
 def create_busses():
     """
-    This function creats 4 buses for each subnet.  
-    TODO: Consider whether or not to create a bus by default
+    This function creates 4 buses for each subnet.  
+    TODO:  Why four buses?  
     """
-    subnets = models.Subnet.objects.all()
+    subnets = models.Subnet.objects.filter(active_in_study = True)
     id = 1
     for subnet in subnets:
         for i in range(4):
@@ -74,6 +77,7 @@ def initialize_simulation(request):
     """
     This function clears data from previous simulations, creates the gateways from a list, creates circular subnets, and creates a bus for each subnet
     This simulation code is also updated here.
+    TODO:  This function could use some GUI action.  Settings like which subnets are active, which gateways to use, size of the iscrhones etc. should be set via gui
     """
     print 'Clearing Data...'
     clear_data()
@@ -97,7 +101,7 @@ def initialize_simulation(request):
     SystemFlags.simulation_code = simulation_code
     SystemFlags.second = 0
     SystemFlags.save()
-    json_str = simplejson.dumps({"simulation_code":simulation_code})
+    json_str = simplejson.dumps({"simulation_code":simulation_code, "simulation_length":settings.SIMULATION_LENGTH})
     return HttpResponse(json_str)
 
  

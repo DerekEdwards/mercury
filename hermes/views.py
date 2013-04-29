@@ -17,7 +17,7 @@ def create_trips(passenger, second):
     @param second : the seconds count into the simulation
     """
 
-    #if the passenger's trip is within a five minute walk. Delete it!
+    #if the passenger's origin and destination are within 5 minutes of each other, dDelete it!
     walking_time = planner_manager.get_optimal_walking_time([passenger.start_lat,passenger.start_lng], [passenger.end_lat, passenger.end_lng])
     if walking_time < 300:
         passenger.delete()
@@ -34,7 +34,6 @@ def create_trips(passenger, second):
         # Get the busses for the passenger's ending subnet
         end_buses = get_candidate_vehicles_from_point_geofence(passenger.end_lat, passenger.end_lng)
     else:
-        print 'NO SUBNET TYPE IS CHOSEN!!!! ERROR ERROR ERROR!!!!!'
         return
 
     if not start_buses and not end_buses: #This is a fully static trip
@@ -210,7 +209,7 @@ def get_candidate_vehicles_from_point_geofence(lat, lng):
     subnets_in_range = []
     vehicles = []
 
-    subnets = models.Subnet.objects.all()
+    subnets = models.Subnet.objects.filter(active_in_study = True)
     for subnet in subnets:
         if within_coverage_area(lat, lng, subnet):
             subnets_in_range.append(subnet)
@@ -243,31 +242,39 @@ def within_coverage_area(lat, lng, subnet):
     #1 Check that we are within the larger geofence, this technically is not needed since we are double-checking the isochrone boundary in the next
     # test, but this is done bcause it is a very fast way to weed out illegal points without needing to do a static trip.  Also, if we are only 
     # concerned about the shape and not the driving time, this will still allow us to do that.
-    gw = subnet.gateway
-    sides = models.FencePost.objects.filter(gateway = gw)
-    if not point_within_geofence(lat,lng,sides):
-        return False
+    if settings.CHECK_GEOFENCING:
+        gw = subnet.gateway
+        sides = models.FencePost.objects.filter(gateway = gw)
+        if not point_within_geofence(lat,lng,sides):
+            return False
 
-    #2 Check that we are not in a pocket
-    geometry, distance, driving_time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])#TOLocation, FromLocation
-    geometry, distance, driving_time_from = planner_manager.get_optimal_vehicle_itinerary([subnet.gateway.lat, subnet.gateway.lng], [lat,lng])#TOLocation, FromLocation
-    if driving_time_to > subnet.max_driving_time or driving_time_from > subnet.max_driving_time:
-        return False
+
+    #2 Check that we are not in a pocket, i.e. an area within the geofence but still beyond the maximum driving distance
+    if settings.CHECK_DRIVING_TIME:
+        geometry, distance, driving_time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])#To,From
+        if driving_time_to > subnet.max_driving_time:
+            return False
+
+        geometry, distance, driving_time_from = planner_manager.get_optimal_vehicle_itinerary([subnet.gateway.lat, subnet.gateway.lng], [lat,lng])#To,From
+        if driving_time_from > subnet.max_driving_time:
+            return False
 
     #3 Check that we are not within the walking distance
-    walking_time = planner_manager.get_optimal_walking_time([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])
-    if walking_time < subnet.max_walking_time:
-        return False
+    if settings.CHECK_WALKING_TIME:
+        walking_time = planner_manager.get_optimal_walking_time([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])
+        if walking_time < subnet.max_walking_time:
+            return False
 
     #4 Check that this subnet's gateway is the closest gateway
-    gateways = models.Gateway.objects.all()
-    for gw in gateways:
-        if gw == subnet.gateway:
-            continue
-        geometry, distance, time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [gw.lat, gw.lng]) #TOLocation, FromLocation
-        geometry, distance, time_from = planner_manager.get_optimal_vehicle_itinerary([gw.lat, gw.lng], [lat,lng]) #TOLocation, FromLocation
-        if (time_to + time_from) < (driving_time_to + driving_time_from):
-            return False
+    if settings.CHECK_OTHER_SUBNETS:
+        subnets = models.Subnet.objects.all()
+        for sn in subnets:
+            if sn == subnet:
+                continue
+            geometry, distance, time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [sn.gateway.lat, sn.gateway.lng]) #TOLocation, FromLocation
+            geometry, distance, time_from = planner_manager.get_optimal_vehicle_itinerary([sn.gateway.lat, sn.gateway.lng], [lat,lng]) #TOLocation, FromLocation
+            if (time_to + time_from) < (driving_time_to + driving_time_from):
+                return False
 
     return True
 
@@ -429,16 +436,18 @@ def get_flexbus_location(flexbus, second, flexbus_stops = None):
         flexbus_stops = models.Stop.objects.filter(flexbus = flexbus).order_by('visit_time')
 
     next_stop = flexbus_stops.filter(visit_time__gt = second)
+    last_stop = flexbus_stops.filter(visit_time__lte = second).order_by('-visit_time')
 
     if next_stop.count():
         next_stop = next_stop[0]
     else:
-        return flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng, 0
+        if last_stop.count():
+            return last_stop[0].lat, last_stop[0].lng, 0
+        else:
+            return flexbus.subnet.gateway.lat, flexbus.subnet.gateway.lng, 0
 
-    last_stop = flexbus_stops.filter(visit_time__lte = second).order_by('visit_time')
-    
     if last_stop.count():
-        last_stop = last_stop[last_stop.count() - 1]
+        last_stop = last_stop[0]
         last_stop_lat = last_stop.lat
         last_stop_lng = last_stop.lng
         last_stop_time = last_stop.visit_time

@@ -10,7 +10,7 @@
     /* This isochrone generate is derived from http://sandropaganotti.com/generate-an-isochrone-map-using-google-maps-api/ */    
 
     //Configurables
-    var NUMBER_OF_SLICES = 36;
+    var NUMBER_OF_SLICES = 5;
     var DEFAULT_LAT = 33.781002;
     var DEFAULT_LNG = -84.38942; 
   
@@ -18,8 +18,8 @@
     var geocoder = null;
     var directionsPanel = null;
     var directions = null;
-    var inc_x = 0.001;
-    var inc_y = 0.001;
+    var inc_x = 0.01;
+    var inc_y = 0.01;
     var x     = 0;
     var y     = 0;
     var m     = 0;
@@ -105,7 +105,7 @@
              However, it appears that there is a check to see if the number of minutes has been passed by more thatn 40% and 
              the number of checks has surpassed 50
             */
-            if(curr_meas > (mins + (mins * 5)) || (m > 30 && found ==1) || m > 200){
+            if(curr_meas > (mins + (mins * 5)) || (m > 10 && found ==1) || m > 200){
                 points.push(new GLatLng(prev_dest.x, prev_dest.y));
                 start_s = start_s + slice;
                 x = inc_x;
