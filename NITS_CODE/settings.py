@@ -161,9 +161,9 @@ BETA = 1 #Weight associated with Passenger costs in cost function
 
 #Passenger settings
 USE_SURVEY_PASSENGERS = True
-SURVEY_PASSENGER_FILE = "hermes/bin/bigTest.csv"
-DELETE_SURVEY_PASSENGERS = False #We delete and reload the survey passengers each time
-PRESCREEN_SURVEY_PASSENGERS = False #We reconcile passengers that are outside the transit footprint
+SURVEY_PASSENGER_FILE = "hermes/bin/11thru2REAL.csv"
+DELETE_SURVEY_PASSENGERS = True #We delete and reload the survey passengers each time
+PRESCREEN_PASSENGERS = True #We reconcile passengers that are outside the transit footprint
 
 CREATE_STATIC_TRIPS = False #used in views.py.  If we are debugging and don't to spend a lot of computation time creating static trips, set this to false
 

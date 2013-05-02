@@ -5,7 +5,7 @@ from django.http import HttpResponse
 from extra_utils.extra_shortcuts import render_response
 from extra_utils.variety_utils import log_traceback
 
-from hermes import models, utils, views
+from hermes import models, utils, views, planner_manager
 
 def index(request):
     """
@@ -25,6 +25,10 @@ def show_summary(request):
 
 def show_survey_passengers(request):
     return render_response(request, 'survey.html', {})
+
+@log_traceback
+def show_survey_colors(request):
+    return render_response(request, 'colors.html', {})
 
 @log_traceback
 def get_summary_data(request):
@@ -64,6 +68,52 @@ def get_survey_data(request):
     json_str = simplejson.dumps({"starts":starts, "ends":ends})
     return HttpResponse(json_str)
 
+
+@log_traceback
+def get_survey_colors(request):
+
+    passengers = models.SurveyPassenger.objects.all().order_by('survey_id')
+    pmin = int(request.GET['id'])
+    pmax = pmin + 1000
+    passengers = passengers[pmin:pmax]
+    subnets = models.Subnet.objects.all()
+
+    starts = []
+    start_colors = []
+    ends  = []
+    end_colors = []
+
+    index = 0
+    for passenger in passengers:
+        index += 1
+        print index
+        if index % 100: # we don't have to do every passenger, just a sampling
+            continue
+        closest_subnet = None
+        min_distance = float('inf')
+        for sn in subnets:        
+            geometry, distance, time_to = planner_manager.get_optimal_vehicle_itinerary([passenger.start_lat,passenger.start_lng], [sn.gateway.lat, sn.gateway.lng])
+            geometry, distance, time_from = planner_manager.get_optimal_vehicle_itinerary([sn.gateway.lat, sn.gateway.lng],[passenger.start_lat,passenger.start_lng])
+            if (time_to + time_from) < min_distance:
+                min_distance = (time_to + time_from)
+                closest_subnet = sn
+        starts.append([passenger.start_lat, passenger.start_lng])
+        start_colors.append(closest_subnet.subnet_id)
+
+
+        closest_subnet = None
+        min_distance = float('inf')
+        for sn in subnets:        
+            geometry, distance, time_to = planner_manager.get_optimal_vehicle_itinerary([passenger.end_lat,passenger.end_lng], [sn.gateway.lat, sn.gateway.lng])
+            geometry, distance, time_from = planner_manager.get_optimal_vehicle_itinerary([sn.gateway.lat, sn.gateway.lng],[passenger.end_lat,passenger.end_lng])
+            if (time_to + time_from) < min_distance:
+                min_distance = (time_to + time_from)
+                closest_subnet = sn
+        ends.append([passenger.end_lat, passenger.end_lng])
+        end_colors.append(closest_subnet.subnet_id)
+
+    json_str = simplejson.dumps({"starts":starts, "ends":ends, "start_colors":start_colors, "end_colors":end_colors})
+    return HttpResponse(json_str)
 
 @log_traceback
 def show_live_map(request):
@@ -261,9 +311,63 @@ def save_data(request):
     subnet.max_driving_time += 120
     subnet.save()
 
-    if subnet.max_driving_time < 901:
+    if subnet.max_driving_time < 1201:
         json_str = simplejson.dumps({"result":True})
     else:
         json_str = simplejson.dumps({"result":False})
 
     return HttpResponse(json_str)
+
+@log_traceback
+def passengers_per_subnet(subnet_id):
+    subnet_count = 0
+
+    subnet = models.Subnet.objects.get(subnet_id = subnet_id)
+    subnets = models.Subnet.objects.all()
+    passengers = models.SurveyPassenger.objects.all()
+    index = 0
+    for passenger in passengers:
+        print index
+        index += 1
+        print passenger.id
+        print '-----'
+        closest_start = True
+        closest_end = True
+
+        geometry, distance, time_to_midtown_start = planner_manager.get_optimal_vehicle_itinerary([passenger.start_lat,passenger.start_lng], [subnet.gateway.lat, subnet.gateway.lng]) 
+        geometry, distance, time_from_midtown_start = planner_manager.get_optimal_vehicle_itinerary([subnet.gateway.lat, subnet.gateway.lng], [passenger.start_lat,passenger.start_lng])
+        geometry, distance, time_to_midtown_end = planner_manager.get_optimal_vehicle_itinerary([passenger.end_lat,passenger.end_lng], [subnet.gateway.lat, subnet.gateway.lng]) 
+        geometry, distance, time_from_midtown_end = planner_manager.get_optimal_vehicle_itinerary([subnet.gateway.lat, subnet.gateway.lng], [passenger.end_lat,passenger.end_lng])
+        
+        walking_time = planner_manager.get_optimal_walking_time([passenger.start_lat,passenger.start_lng], [subnet.gateway.lat, subnet.gateway.lng])
+        if walking_time < subnet.max_walking_time:
+            closest_start = False
+
+        walking_time = planner_manager.get_optimal_walking_time([passenger.end_lat,passenger.end_lng], [subnet.gateway.lat, subnet.gateway.lng])
+        if walking_time < subnet.max_walking_time:
+            closest_end = False
+            
+                   
+        for sn in subnets:
+            if sn == subnet:
+                continue
+            geometry, distance, time_to = planner_manager.get_optimal_vehicle_itinerary([passenger.start_lat,passenger.start_lng], [sn.gateway.lat, sn.gateway.lng])
+            geometry, distance, time_from = planner_manager.get_optimal_vehicle_itinerary([sn.gateway.lat, sn.gateway.lng], [passenger.start_lat,passenger.start_lng]) 
+            if (time_to + time_from) < (time_to_midtown_start + time_from_midtown_start):
+                closest_start = False
+                break
+
+        for sn in subnets:
+            if sn == subnet:
+                continue
+            geometry, distance, time_to = planner_manager.get_optimal_vehicle_itinerary([passenger.end_lat,passenger.end_lng], [sn.gateway.lat, sn.gateway.lng])
+            geometry, distance, time_from = planner_manager.get_optimal_vehicle_itinerary([sn.gateway.lat, sn.gateway.lng], [passenger.end_lat,passenger.end_lng]) 
+            if (time_to + time_from) < (time_to_midtown_end + time_from_midtown_end):
+                closest_end = False
+
+        if closest_start or closest_end:
+            subnet_count += 1
+
+    
+    print subnet_count
+    return subnet_count

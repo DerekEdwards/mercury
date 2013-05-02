@@ -91,6 +91,9 @@ def get_optimal_transit_times(toLocation, fromLocation, requestTime=None, attemp
             #In OTP, if a trip starts or ends in the middle of a highway or some inaccessible place, the above error is thrown.  To get around this.  I will slightly adjust the start and end location by a couple of hundred feet, until a safe route is found.
             print 'Adjusting Start/End Location to make trip safer'
             return get_optimal_transit_times([toLocation[0] + .001, toLocation[1]], [fromLocation[0] + .001, fromLocation[1]], requestTime, attempt + 1)
+        elif 'Trip is not possible.' in msg:
+            print 'TRIP NOT POSSIBLE'
+            return False, False, False, False
         print 'OPEN TRIP PLANNER FAILED TO FIND A TRIP'
         print 'Starting ' + str(toLocation[0]) + ',' + str(toLocation[1])
         print 'Ending ' + str(fromLocation[0]) + ',' + str(fromLocation[1])

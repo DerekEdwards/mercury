@@ -198,10 +198,8 @@ def insert_survey_passengers(file_path):
             cnt += 1
             line = line.strip("\r\n").replace('"', '').split(",")
 
-            start_hour = int(line[1])
-            start_minute = int(line[2])
-            second = (start_hour - 7)*3600 + start_minute*60
-            values += values_str % (line[0], line[4], line[5], line[7], line[8] ,second)
+            second = int(line[1])
+            values += values_str % (line[0], line[2], line[3], line[4], line[5] ,second)
             
             if cnt >= 100:
                 try:
@@ -239,9 +237,9 @@ def find_closest_gateway(lat,lng):
     closest_gw = None
     distance = float('inf')
     for gw in gateways:
-        temp_dist = haversine_dist([lat,lng], [gateway.lat, gateway.lng])
+        temp_dist = utils.haversine_dist([lat,lng], [gw.lat, gw.lng])
         if temp_dist < distance:
-            distance = temp_dif
+            distance = temp_dist
             closest_gw = gw
     return closest_gw
         
@@ -277,25 +275,29 @@ def prescreen_passengers():
 
         if not walk: #This trip is not possible given the transit schedule
             failures += 1
-            start_gw = find_closest_gateway([passenger.start_lat, passenger.start_lng])
+            print 'FAILURE CAUGHT:  ' + str(failures) 
+            start_gw = find_closest_gateway(passenger.start_lat, passenger.start_lng)
             walk, wait, ride, initial_wait = planner_manager.get_optimal_transit_times([passenger.end_lat, passenger.end_lng], [start_gw.lat, start_gw.lng], trip_time, 0)
             if walk: #Changing the start location helped
                 passenger.start_lat = start_gw.lat
                 passenger.start_lng = start_gw.lng
                 passenger.save()
+                print 'CHANGED START'
             else: #Changing the start location DID NOT help
-                end_gw = find_closest_gateway([passenger.end_lat, passenger.end_lng])
+                end_gw = find_closest_gateway(passenger.end_lat, passenger.end_lng)
                 walk, wait, ride, initial_wait = planner_manager.get_optimal_transit_times([end_gw.lat, end_gw.lng], [passenger.start_lat, passenger.start_lng], trip_time, 0)
                 if walk: #Changing the end_location helped
                     passenger.end_lat = end_gw.lat
                     passenger.end_lng = end_gw.lng
                     passenger.save()
+                    print 'CHANGED END'
                 else: #Both locations needed to be changed.  Let's hope this doesn't happen too much
                     passenger.start_lat = start_gw.lat
                     passenger.start_lng = start_gw.lng
                     passenger.end_lat = end_gw.lat
                     passenger.end_lng = end_gw.lng
                     passenger.save()
+                    print 'CHANGED BOTH'
            
         index += 1
         print index

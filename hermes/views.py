@@ -119,7 +119,6 @@ def which_bus(busses, passenger, second, first_mile):
     """
     Takes in a query of buses and determines which one will be finished with its route first.
     If no routes are finished within 30 minutes.  A new bus is dispatched.
-    TODO: We should make this a smarter algorithm.  Do not simply put the passenger on the bus with the least burden.  This does not take into account the locatino of the passenger.
     @busses : a query of flexbus objects
     @first_mile : if this is the first mile of a trip this is true, if this is the last mile, then this is false
     @second : the seconds into the simulation
@@ -128,8 +127,7 @@ def which_bus(busses, passenger, second, first_mile):
     min_bus = None
     min_time = float('inf');
     min_cost = float('inf');
- 
-   
+
     for bus in busses:
         if first_mile:
             trip_geographic_mean  = find_geographic_average([[passenger.start_lat, passenger.start_lng], [bus.subnet.gateway.lat, bus.subnet.gateway.lng]])
@@ -165,7 +163,6 @@ def which_bus(busses, passenger, second, first_mile):
         #Check to find the min time, this will be used to see if the system needs an ew vehicle
         if (last_trip.end_time - second) < min_time:
             min_time = last_trip.end_time - second
-
 
     #If no bus is scheduld to be done in 15 minutes
     if min_time > 15*60:
@@ -211,7 +208,8 @@ def get_candidate_vehicles_from_point_geofence(lat, lng):
 
     subnets = models.Subnet.objects.filter(active_in_study = True)
     for subnet in subnets:
-        if within_coverage_area(lat, lng, subnet):
+        within, reason = within_coverage_area(lat, lng, subnet):
+        if within:
             subnets_in_range.append(subnet)
 
     for subnet in subnets_in_range:
@@ -246,24 +244,24 @@ def within_coverage_area(lat, lng, subnet):
         gw = subnet.gateway
         sides = models.FencePost.objects.filter(gateway = gw)
         if not point_within_geofence(lat,lng,sides):
-            return False
+            return False, 1
 
 
     #2 Check that we are not in a pocket, i.e. an area within the geofence but still beyond the maximum driving distance
     if settings.CHECK_DRIVING_TIME:
         geometry, distance, driving_time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])#To,From
         if driving_time_to > subnet.max_driving_time:
-            return False
+            return False, 2
 
         geometry, distance, driving_time_from = planner_manager.get_optimal_vehicle_itinerary([subnet.gateway.lat, subnet.gateway.lng], [lat,lng])#To,From
         if driving_time_from > subnet.max_driving_time:
-            return False
+            return False, 3
 
     #3 Check that we are not within the walking distance
     if settings.CHECK_WALKING_TIME:
         walking_time = planner_manager.get_optimal_walking_time([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])
         if walking_time < subnet.max_walking_time:
-            return False
+            return False, 4
 
     #4 Check that this subnet's gateway is the closest gateway
     if settings.CHECK_OTHER_SUBNETS:
@@ -274,9 +272,9 @@ def within_coverage_area(lat, lng, subnet):
             geometry, distance, time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [sn.gateway.lat, sn.gateway.lng]) #TOLocation, FromLocation
             geometry, distance, time_from = planner_manager.get_optimal_vehicle_itinerary([sn.gateway.lat, sn.gateway.lng], [lat,lng]) #TOLocation, FromLocation
             if (time_to + time_from) < (driving_time_to + driving_time_from):
-                return False
+                return False, 5
 
-    return True
+    return True, None
 
 @log_traceback
 def point_within_geofence(lat, lng, sides):
@@ -532,7 +530,7 @@ def optimize_static_route(second, trip_segment):
     seconds = current_time - (minutes*60) - (hours*3600)
     
     trip_time = datetime.datetime(year = settings.SIMULATION_START_YEAR, month = settings.SIMULATION_START_MONTH, day = settings.SIMULATION_START_DAY, hour = hours, minute = minutes, second = seconds)
-
+    
     walking_time, waiting_time, riding_time, initial_wait = planner_manager.get_optimal_transit_times([trip_segment.end_lat, trip_segment.end_lng], [trip_segment.start_lat, trip_segment.start_lng], trip_time)
 
     total_time = walking_time + waiting_time + riding_time
