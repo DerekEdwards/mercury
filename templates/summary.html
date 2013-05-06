@@ -44,12 +44,14 @@
                var VMT = message['VMT'];
                var vehicle_count = message['vehicle_count'];
                var vehicle_avg_VMT = message['vehicle_avg_VMT'];
+               var h_static_time = message['h_static_time'];
 
                var html_data = "<b>Summary:</b>"; 
                html_data += "<br><br>Passenger Data:"
                html_data += "<br>Passenger Count:      " + starts.length;
                html_data += "<br>Completed Trips:      " + completed_passenger_count;
                html_data += "<br>Avg. Time (s):        " + avg_time;
+               html_data += "<br>Avg. Time w/o DRT (s) " + h_static_time;
                html_data += "<br>Avg. Distance (m):    " + avg_distance;
                html_data +="<br>Avg. Speed (mph):      " + avg_mph;
                html_data +="<br>------------------------------"

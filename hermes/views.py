@@ -208,7 +208,7 @@ def get_candidate_vehicles_from_point_geofence(lat, lng):
 
     subnets = models.Subnet.objects.filter(active_in_study = True)
     for subnet in subnets:
-        within, reason = within_coverage_area(lat, lng, subnet):
+        within, reason = within_coverage_area(lat, lng, subnet)
         if within:
             subnets_in_range.append(subnet)
 
@@ -259,9 +259,11 @@ def within_coverage_area(lat, lng, subnet):
 
     #3 Check that we are not within the walking distance
     if settings.CHECK_WALKING_TIME:
-        walking_time = planner_manager.get_optimal_walking_time([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])
-        if walking_time < subnet.max_walking_time:
-            return False, 4
+        sns = models.Subnet.objects.all()
+        for sn in sns:
+            walking_time = planner_manager.get_optimal_walking_time([lat,lng], [sn.gateway.lat, sn.gateway.lng])
+            if walking_time < subnet.max_walking_time:
+                return False, 4
 
     #4 Check that this subnet's gateway is the closest gateway
     if settings.CHECK_OTHER_SUBNETS:

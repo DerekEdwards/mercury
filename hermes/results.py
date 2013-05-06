@@ -1,4 +1,4 @@
-import os, datetime
+import os, datetime, copy
 
 from django.utils import simplejson
 from django.http import HttpResponse
@@ -6,6 +6,7 @@ from extra_utils.extra_shortcuts import render_response
 from extra_utils.variety_utils import log_traceback
 
 from hermes import models, utils, views, planner_manager
+from NITS_CODE import settings
 
 def index(request):
     """
@@ -32,6 +33,14 @@ def show_survey_colors(request):
 
 @log_traceback
 def get_summary_data(request):
+    starts, start_static, ends, end_static, VMT, vehicle_count, vehicle_avg_VMT, passenger_count, average_distance_meters, average_speed_mph, average_time, h_static_time = get_summary_data_generic()
+
+    json_str = simplejson.dumps({"starts":starts, "start_static":start_static, "ends":ends, "end_static":end_static, "VMT":VMT, "vehicle_count":vehicle_count, "vehicle_avg_VMT":vehicle_avg_VMT, "completed_passenger_count":passenger_count, "avg_distance":average_distance_meters, "avg_mph":average_speed_mph, "avg_time":average_time,"h_static_time":h_static_time})
+    return HttpResponse(json_str)
+
+
+def get_summary_data_generic():
+    
     passengers = models.Passenger.objects.all()
 
     starts = []
@@ -47,12 +56,13 @@ def get_summary_data(request):
         start_static.append(trips[0].static)
         end_static.append(trips[trips.count() - 1].static)
         
-    passenger_count, average_distance_meters, average_time, average_speed_meters_per_second =  get_passenger_details()
+    passenger_count, average_distance_meters, average_time, average_speed_meters_per_second, h_static_time =  get_passenger_details()
     average_speed_mph = 2.23694*average_speed_meters_per_second
 
     VMT, vehicle_count, vehicle_avg_VMT = get_flexbus_details()
-    json_str = simplejson.dumps({"starts":starts, "start_static":start_static, "ends":ends, "end_static":end_static, "VMT":VMT, "vehicle_count":vehicle_count, "vehicle_avg_VMT":vehicle_avg_VMT, "completed_passenger_count":passenger_count, "avg_distance":average_distance_meters, "avg_mph":average_speed_mph, "avg_time":average_time})
-    return HttpResponse(json_str)
+    
+    return starts, start_static, ends, end_static, VMT, vehicle_count, vehicle_avg_VMT, passenger_count, average_distance_meters, average_speed_mph, average_time, h_static_time
+    
 
 @log_traceback
 def get_survey_data(request):
@@ -87,7 +97,7 @@ def get_survey_colors(request):
     for passenger in passengers:
         index += 1
         print index
-        if index % 100: # we don't have to do every passenger, just a sampling
+        if index % 10: # we don't have to do every passenger, just a sampling
             continue
         closest_subnet = None
         min_distance = float('inf')
@@ -149,15 +159,16 @@ def show_live_map(request):
 
     flexbus_location = [lat, lng]
     
-    json_str = simplejson.dumps({"starts":starts, "ends":ends, "times":times, "stops":stop_array, "flexbus_location":flexbus_location, "second":second})
+    json_str = simplejson.dumps({"starts":starts, "ends":ends, "times":times, "stops":stop_array, "flexbus_location":flexbus_location, "second":second, "max_driving_time":vehicle.subnet.max_driving_time, "max_walking_time":vehicle.subnet.max_walking_time})
     return HttpResponse(json_str)
 
-
+@log_traceback
 def get_passenger_details():
     passengers = models.Passenger.objects.all()
     total_time  = 0.0
     total_distance  = 0.0
     completed_passenger_count = 0.0
+    hypothetical_static_time = 0.0
     for passenger in passengers:
         trips = passenger.tripsegment_set.all().order_by('trip_sequence')
         if trips[trips.count() - 1].end_time > 24*3600: #This trip never ended, ignore this passenger, he's still en route
@@ -168,12 +179,24 @@ def get_passenger_details():
         completed_passenger_count += 1
         total_time += (trips[trips.count()-1].end_time - trips[0].earliest_start_time)
         total_distance += utils.haversine_dist([passenger.start_lat, passenger.start_lng], [passenger.end_lat, passenger.end_lng])
+        
+        #hypothetical transit trip for comparison
+        current_time = passenger.time_of_request + settings.SIMULATION_START_TIME
+        hours = int(current_time/3600)
+        minutes = int((current_time - (hours*3600))/60)
+        seconds = current_time - (minutes*60) - (hours*3600)
+        trip_time = datetime.datetime(year = settings.SIMULATION_START_YEAR, month = settings.SIMULATION_START_MONTH, day = settings.SIMULATION_START_DAY, hour = hours, minute = minutes, second = seconds)
+        hwalk, hwait, hride, hunused = planner_manager.get_optimal_transit_times([passenger.end_lat, passenger.end_lng], [passenger.start_lat, passenger.start_lng], trip_time)
+        if (hwalk + hwait + hride == False):
+            print 'THIS SHOULD NEVER SHOW UP'
+        hypothetical_static_time += (hwalk + hwait + hride)
 
     avg_distance = total_distance/completed_passenger_count
     avg_time = total_time/completed_passenger_count
     avg_speed = avg_distance/avg_time
+    h_static_time = hypothetical_static_time/completed_passenger_count
 
-    return completed_passenger_count, avg_distance, avg_time, avg_speed
+    return completed_passenger_count, avg_distance, avg_time, avg_speed, h_static_time
 
 def flextrip_summary():
     trips = models.TripSegment.objects.filter()
@@ -298,24 +321,67 @@ def summary_of_results():
 def save_data(request):
     """
     After a simulation is run, take dump of the db.
-    TODO:  This functions contains some hardcoding that could be moved out.
+    TODO:  This functions contains some hardcoding that should be moved out.
     """
+    SystemFlags = models.SystemFlags.objects.all()
+    SystemFlags = SystemFlags[0]
     gw = models.Gateway.objects.get(gateway_id = 8)
     subnet = models.Subnet.objects.get(gateway = gw)
     time = datetime.datetime.now()
-    target_dir = '/home/derek/Code/results/'
-    db_name = 'midtown_11thru2_driving_' + str(subnet.max_driving_time) + "_walking_" + str(subnet.max_walking_time) + '_' + str(time.date()) + '-' + str(time.time()) + '.sql'
+    total_passengers = models.Passenger.objects.all()
 
-    os.system("mysqldump -uroot -ppword NITS > " + target_dir + db_name)    
+    description = 'testing_midtown_11thru2_driving_' + str(subnet.max_driving_time) + "_walking_" + str(subnet.max_walking_time) + '_' + str(time.date()) + '-' + str(time.time()) 
+
+    ###Dump the DB
+    target_dir = '/home/derek/Code/results/'
+    os.system("mysqldump -uroot -ppword NITS > " + target_dir + description + ".sql")    
     
-    subnet.max_driving_time += 120
+
+    ###Create a SimulationResult entry
+    #Meta Data
+    sim_results = models.SimulationResult(description = description)
+    sim_results.timestamp = time
+    sim_results.simulation_code = SystemFlags.simulation_code
+    sim_results.simulation_set = SystemFlags.simulation_set
+
+
+    #Passenger Data
+    completed_passenger_count, avg_distance, avg_time, avg_speed, h_avg_static_time = get_passenger_details()
+    
+    sim_results.started_trips = total_passengers.count()
+    sim_results.completed_trips = completed_passenger_count
+    sim_results.DRT_time_avg = avg_time
+    sim_results.FRT_time_avg = h_avg_static_time
+    sim_results.average_distance = avg_distance
+    
+    #Vehicle Data
+    VMT, vehicle_count, vehicle_avg_VMT = get_flexbus_details()
+    FRT_VMT, trips_served = static_vmt_within_zone(5) #get static vehicle details for service id 5
+    sim_results.total_DRT_VMT  = VMT
+    sim_results.total_FRT_VMT_saved = FRT_VMT
+    sim_results.total_DRT_vehicles_used = vehicle_count 
+
+    #Total Cost
+    sim_results.total_net_cost = settings.PASSENGER_VOT*completed_passenger_count*(avg_time - h_avg_static_time) + (settings.DRT_CPM*VMT - settings.FRT_CPM*FRT_VMT) 
+    sim_results.save()
+    
+
+    ###Updates the simulation parameters and decides whether to run it again
+    subnet.max_driving_time += 240
     subnet.save()
 
-    if subnet.max_driving_time < 1201:
+    if subnet.max_driving_time <= 600:
         json_str = simplejson.dumps({"result":True})
     else:
-        json_str = simplejson.dumps({"result":False})
-
+        subnet.max_driving_time = 120
+        subnet.save()
+        subnet.max_walking_time += 300
+        subnet.save()
+        if subnet.max_walking_time <= 900: 
+            json_str = simplejson.dumps({"result":True})
+        else:
+            json_str = simplejson.dumps({"result":False})
+        
     return HttpResponse(json_str)
 
 @log_traceback
@@ -371,3 +437,74 @@ def passengers_per_subnet(subnet_id):
     
     print subnet_count
     return subnet_count
+
+
+@log_traceback
+def static_vmt_within_zone(service_id = 5):
+    subnets = models.Subnet.objects.filter(active_in_study = True)
+
+    start_time = settings.SIMULATION_START_TIME
+    duration = settings.SIMULATION_LENGTH
+    end_time = start_time + duration
+
+    hours = int(start_time/3600)
+    minutes = int((start_time - (hours*3600))/60)
+    seconds = int(start_time - (minutes*60) - (hours*3600))
+    start = datetime.time(hours, minutes, seconds)
+
+    hours = int(end_time/3600)
+    minutes = int((end_time - (hours*3600))/60)
+    seconds = int(end_time - (minutes*60) - (hours*3600))
+    end = datetime.time(hours, minutes, seconds)
+
+    stops = models.StaticStop.objects.all()
+    stop_count = stops.count()
+    trips = []
+    
+    progress = 0
+    total_vmt = 0
+    trips_served = 0
+    shape_dict = {}
+    for stop in stops:
+        progress += 1
+        print 'Percent Complete Calculating Static VMT:  ' + str(100*progress/stop_count)
+        for subnet in subnets:
+            result, reason = views.within_coverage_area(stop.lat, stop.lng, subnet)
+            if result:
+                stoptimes = models.StopTime.objects.filter(departure_time__gte = start, departure_time__lte = end, stop = stop)
+                for stoptime in stoptimes:
+                    
+                    if not(stoptime.trip.service_id == service_id):
+                        continue
+                    if not(stoptime.trip in trips):
+                        trips_served += 1
+                        trips.append(stoptime.trip)
+                        if stoptime.trip.shape_id in shape_dict: #if we have already calculated this shape before, pull htat data from the dictionary
+                            total_vmt += shape_dict[stoptime.trip.shape_id]
+                        else:
+                            shapes = models.Shape.objects.filter(shape_id = stoptime.trip.shape_id).order_by('shape_dist_traveled')
+                            last_shape = None
+                            trip_distance = 0
+                            shape_idx = 0
+                            shapes_count= shapes.count()
+                            for shape in shapes:
+                                shape_idx += 1
+                                if shape_idx % 10:
+                                    continue
+                                result, reason = views.within_coverage_area(shape.lat, shape.lng, subnet)
+                                if result and last_shape:
+                                    trip_distance += utils.haversine_dist([last_shape.lat, last_shape.lng], [shape.lat, shape.lng])
+                                    last_shape = copy.copy(shape)
+                                if (not result) and last_shape:
+                                    trip_distance += utils.haversine_dist([last_shape.lat, last_shape.lng], [shape.lat, shape.lng])
+                                    last_shape = None
+                                if result and (not last_shape):
+                                    last_shape = copy.copy(shape)
+                            shape_dict[shape.shape_id] = trip_distance
+                            total_vmt += trip_distance
+                            print total_vmt
+
+    print total_vmt
+    print trips_served
+
+    return total_vmt, trips_served

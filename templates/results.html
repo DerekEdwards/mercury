@@ -46,13 +46,18 @@
                var stops = message['stops'];
                var second = message['second'];
                var flexbus_location = message['flexbus_location']
+               var max_walking_time = message['max_walking_time']
+               var max_driving_time = message['max_driving_time']
+  
     
                for (var i = 0; i < stops.length; i++) {
 		   points.push(new GLatLng(stops[i][0], stops[i][1]));
 	       }
                map.addOverlay(new GPolyline(points));
 
-               var html_data = "<b>Passenger Times at second, " + second + ":</b>"; 
+               var html_data = "<b>Passenger Times at second, " + second + ":</b>";
+	           html_data = html_data + "<br>Max Driving Time is " + max_driving_time + " seconds.";
+	           html_data = html_data + "<br>Max Walking Time is " + max_walking_time + " seconds.";
 	       
 	       for (var i = 0; i < starts.length; i++) {
 

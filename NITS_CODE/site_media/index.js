@@ -167,7 +167,6 @@ function master(){
 		   var html_data = $('#infoWindow').html(); 
 		    $('#infoWindow').html(html_data + '<br>Saving the data!<br><b>');  
                    console.log('these passengers will never be inserted');
-		   //save_data(); 
 		    
 		}
 		else if(!INITIALIZING){

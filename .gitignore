@@ -5,3 +5,5 @@
 *#*
 *.bak
 *.csv
+*.txt
+*gtfs_insert.py

@@ -5,10 +5,62 @@ class SystemFlags(models.Model):
     simulation_code : unique identifier for each time a simulation is run
     """
     simulation_code = models.IntegerField(null = False, default = 0)
-    
+    simulation_set = models.IntegerField(null = True)
     #there is a need for a global seconds definition
     second = models.IntegerField(null = False, default = 0)
     
+class SimulationResults(models.Model):
+    """
+    Each time a simulation is run, it's basic results will be stored in one of these objects
+    simulation_code: unique code for this simulation, set by the systemflags
+    simulation_description: string description
+    
+    passenger_count: total number of passenger trips started
+    DRT_passenger_count: total number of passengers using DRT whose trip has started
+    FRT_passenger_count: total number of passengers using FRT whose trip has started
+    
+    completed_passenger_count: total number of completed passenger trips
+    completed_DRT_passenger_count: total number of completed passenger trips where one or more portions were DRT
+    completed_FRT_passenger_count: total number of complted passenger trips where the entire trip was FRT
+    
+    total_DRT_time: total trip time of passengers using DRT
+    total_DRT_distance: total trip distances of passengers using DRT
+    total_FRT_time: total trip of passengers using static only
+    total_FRT_distance:  total trip distances of passengers using static only
+    
+    total_DRT_vehicles: total number of DRT vehicles used
+    total_DRT_VMT:  the total distance traveled by these vehicles
+    total_FRT_VMT_within_zone: the total distances of FRT vehicle VMT within the DRT zone (assuming no DRT was used) during the time of the simulation
+
+    total_hypothetical_FRT_time: total FRT time assuming that no DRT was used for any passenger (this is what we are trying to beat)
+    """
+    #META
+    simulation_code = models.IntegerField(null = False)
+    simulation_description = models.CharField(max_length = 250, null = True)
+    
+    #Passenger Counts
+    passenger_count = models.IntegerField(null = False)
+    DRT_passenger_count = models.IntegerField(null = False)
+    FRT_passenger_count = models.IntegerField(null = False)
+    
+    completed_passenger_count = models.IntegerField(null = False)
+    completed_DRT_passenger_count = models.IntegerField(null = False)
+    completed_FRT_passenger_count = models.IntegerField(null = False)
+    
+    #Time and Distance
+    total_DRT_time = models.IntegerField(null = False)
+    total_DRT_distance = models.FloatField(null = False)
+    total_FRT_time = models.IntegerField(null = False)
+    total_FRT_distance = models.FloatField(null = False)
+    
+    total_DRT_vehicles = models.IntegerField(null = False)
+    total_DRT_VMT = models.FloatField(null = False)
+    total_FRT_VMT_within_zone = models.FloatField(null = False)
+
+    #Hypothetical FRT Costs
+    total_hypothetical_FRT_time = models.IntegerField(null = False)
+   
+
 class SurveyPassenger(models.Model):
     """
     Survey Passengesr contain start/end location as well as times of request
@@ -199,7 +251,7 @@ class Stop(models.Model):
 class FencePost(models.Model):
     """
     This is where the geofences around each gateway are created
-    Each gateway has a set of ordered fencePosts that make up the perimeter 
+    Each gatewaby has a set of ordered fencePosts that make up the perimeter 
     lat : float, latitude of FencePost
     lng : float, longitude of FencePost
     gateway : foreignkey to the gateway that this FencePost belongs to
@@ -209,3 +261,105 @@ class FencePost(models.Model):
     lng = models.FloatField(null = False)
     gateway = models.ForeignKey(Gateway, null = True)
     sequence = models.IntegerField(null = False)
+
+################################
+## These models below hold GTFS data for calcularing Static VMT
+################################
+
+class Route(models.Model):
+    route_id = models.IntegerField(null = False)
+    short_name = models.CharField(max_length = 100, null = True)
+    long_name = models.CharField(max_length = 250, null = True)
+
+class Shape(models.Model):
+    shape_id = models.IntegerField(null = False)
+    lat = models.FloatField(null = False)
+    lng = models.FloatField(null = False)
+    sequence = models.IntegerField(null = False)
+    shape_dist_traveled = models.FloatField(null = False)
+
+class StaticStop(models.Model):
+    stop_id =  models.IntegerField(null = False)
+    stop_name = models.CharField(max_length = 100, null = True)
+    lat = models.FloatField(null = False)
+    lng = models.FloatField(null = False)
+
+class Trip(models.Model):
+    trip_id = models.IntegerField(null = False)
+    service_id = models.IntegerField(null = True)
+    route = models.ForeignKey(Route, null = True)
+    headsign = models.CharField(max_length = 100, null = True)
+    block_id = models.IntegerField(null = True)
+    shape_id = models.IntegerField(null = False)
+    
+class StopTime(models.Model):
+    trip = models.ForeignKey(Trip, null = True)
+    arrival_time = models.TimeField(null = False)
+    departure_time = models.TimeField(null = False)
+    stop = models.ForeignKey(StaticStop, null = True)
+    stop_sequence = models.IntegerField(null = True)
+    shape_dist_traveled = models.FloatField(null = False)
+
+#######################
+# This Model is used in the Particle Swarm Optimizer.  It is referenced in the Results section
+######################
+class Particle(models.Model):
+    """
+    This is a model for the particles used in the Particle Swarm Optimizer
+    Each particle used to find the optimum inner and outer boundaries for the service areas.
+    particle_id : an integer id identfying each particle.  The particles will be analyzed one-by-one in order of the particle_id
+    simulation_set : there is a simulation code for each simulation.  A simulation set is an id associated with many simulation codes 
+    simulation_code : sim code from the sytems flags
+    step : which stop in the optmization process this was step = 0,1,2,...,n
+    cost : total cost or fitness of this simulation
+    best_cost : the best cost so far
+    x1 : outer boundary value (for isochrones this is measured in seconds)
+    x2 : inner boundary value (for isochrones this is measured in seconds)
+    v1 : outer boundary velocity
+    v2 : inner boundary velocity
+    """
+    particle_id = models.IntegerField(null = False)
+    simulation_set = models.IntegerField(null = False)
+    simulation_code = models.IntegerField(null = False)
+    step = models.IntegerField(null = False, default = 0)
+    cost = models.FloatField(null = True)
+    best_cost = models.FloatField(null = True)
+    x1 = models.FloatField(null = False)
+    x2 = models.FloatField(null = False)
+    v1 = models.FloatField(null = False, default = 0.0)
+    v2 = models.FloatField(null = False, default = 0.0)
+
+
+class SimulationResult(models.Model):
+    """
+    For each simulation, store some basic results about that simulation
+    description : a string identifying the purpose/settings of this simulation
+    timestamp : when did the simulation finish?
+    simulation_code : code from system flags
+    simulation_set : to which set of simulations does this belong?  It is a part of the Particle Swarm Optimizer
+    starte_trips : number of trips started
+    completed_trips : number of trips with assigned finish times
+    drt_time_avg : average time of all trips with assigned finish times that use DRT for any portion of the trip
+    frt_time_avg : if the above drt trips where to use FRT only, what is that average time?
+    average_distance : straight line distance between point A and B for each passenger
+    total_DRT_VMT : total VMT of all FlexBuses
+    total_FRT_VMT_saved : total VMT of all static buses that run within the coverage area
+    total_DRT_vehicles_used : total number of DRT vehicles needed
+
+    total_net_cost : passenger_time_value*completed_trips*(FRT_time_avg - DRT_time_avg) + (DRT_vmt_value*total_FRT_VMT_saved - DRT_vmt_value*total_DRT_VMT)
+    """
+    description = models.CharField(max_length = 100, null = False)
+    timestamp = models.DateTimeField(null = False)
+    simulation_code = models.IntegerField(null = False)
+    simulation_set = models.IntegerField(null = True)
+    
+    started_trips = models.IntegerField(null = False)
+    completed_trips = models.IntegerField(null = False)
+    DRT_time_avg = models.FloatField(null = False) #measured in seconds
+    FRT_time_avg = models.FloatField(null = False) #measured in seconds
+    average_distance = models.FloatField(null = False) #measured in meters
+    total_DRT_VMT  = models.FloatField(null = False) #measured in meters
+    total_FRT_VMT_saved = models.FloatField(null = False) #measured in meters
+    total_DRT_vehicles_used = models.IntegerField(null = False)
+
+    total_net_cost = models.FloatField(null = False)

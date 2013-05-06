@@ -156,29 +156,34 @@ LOGGING = {
 ###
 #Below is a list of configurables for the project
 ###Todo: Move these to a separate configurations file
-ALPHA = 0 #Weight associated with VMT in cost function
-BETA = 1 #Weight associated with Passenger costs in cost function
+ALPHA = 4.4/1609.34 #Weight associated with VMT in cost function
+BETA = 8.92/3600 #Weight associated with Passenger costs in cost function
+
+#Fitness Values
+PASSENGER_VOT = 8.92/3600 #Passenger Value of Time $perhour/seconds in hour
+FRT_CPM = 9.6/1609.34 #FRT Cost Per Mile $ divided by meters in a mile
+DRT_CPM = 4.4/1609.34 #DRT Cost Per Miles $ divided by meters in a mile
 
 #Passenger settings
 USE_SURVEY_PASSENGERS = True
 SURVEY_PASSENGER_FILE = "hermes/bin/11thru2REAL.csv"
-DELETE_SURVEY_PASSENGERS = True #We delete and reload the survey passengers each time
-PRESCREEN_PASSENGERS = True #We reconcile passengers that are outside the transit footprint
+DELETE_SURVEY_PASSENGERS = False #We delete and reload the survey passengers each time
+PRESCREEN_PASSENGERS = False #We reconcile passengers that are outside the transit footprint
 
 CREATE_STATIC_TRIPS = False #used in views.py.  If we are debugging and don't to spend a lot of computation time creating static trips, set this to false
 
 #These four variables are used in views.within_coverage_areas
-CHECK_GEOFENCING = False #We look at the fenceposts for the subnet
+CHECK_GEOFENCING = True #We look at the fenceposts for the subnet
 CHECK_DRIVING_TIME = True #We look at the max driving time for the subnet
 CHECK_WALKING_TIME = True #We look at the max walking time for the subnet
 CHECK_OTHER_SUBNETS = True # We look to see if other subnets are closer with respect to driving time
 
-DEFAULT_MAX_DRIVING_TIME = 600 #seconds
-DEFAULT_MAX_WALKING_TIME = 600 #seconds
+DEFAULT_MAX_DRIVING_TIME = 120 #seconds
+DEFAULT_MAX_WALKING_TIME = 0 #seconds
 
 OTP_SERVER_URL = 'http://localhost:8080/'
 OSRM_SERVER_URL = 'http://localhost:8001/'
-SIMULATION_START_TIME = 7*3600 #seconds into the day
+SIMULATION_START_TIME = 11*3600 #seconds into the day
 SIMULATION_START_DAY = 14
 SIMULATION_START_MONTH = 3
 SIMULATION_START_YEAR = 2013
@@ -187,4 +192,4 @@ USE_CIRCULAR_SUBNET = False
 
 CIRCULAR_SUBNET_RADIUS = 1000 #meters
 
-SIMULATION_LENGTH = 3600*2 #seconds
+SIMULATION_LENGTH = 3600*3 #seconds

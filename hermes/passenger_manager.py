@@ -36,7 +36,7 @@ def get_survey_passengers(request):
     SystemFlags = SystemFlags[0]
     SystemFlags.second = second
     SystemFlags.save()
-   
+    passengers = None
     
     ready = False
     while(not ready and second <= settings.SIMULATION_LENGTH):
@@ -198,7 +198,7 @@ def insert_survey_passengers(file_path):
             cnt += 1
             line = line.strip("\r\n").replace('"', '').split(",")
 
-            second = int(line[1])
+            second = int(line[1]) - settings.SIMULATION_START_TIME
             values += values_str % (line[0], line[2], line[3], line[4], line[5] ,second)
             
             if cnt >= 100:
@@ -304,3 +304,36 @@ def prescreen_passengers():
 
     print 'Falures:  ' + str(failures)
     print 'Total Before Failures:  ' + str(survey_count)
+
+def crop_passengers():
+    
+    """
+    If the survey passengers are not within any geofence, delete them
+    """
+
+    passengers = models.SurveyPassenger.objects.all()
+    subnets = models.Subnet.objects.filter(active_in_study = True)
+    within_count = 0
+    passenger_count = passengers.count()
+    index = 0
+    for passenger in passengers:
+        index += 1
+        print 'Percent Complete:  ' + str(100*index/passenger_count)
+        start_within = False
+        end_within = False
+        
+        for subnet in subnets:
+            sides = models.FencePost.objects.filter(gateway = subnet.gateway).order_by('sequence')
+            if not start_within and not end_within:
+                start_within = views.point_within_geofence(passenger.start_lat, passenger.start_lng, sides)
+                end_within = views.point_within_geofence(passenger.start_lat, passenger.end_lng, sides)
+
+        if start_within or end_within:
+            within_count += 1
+            continue
+        else:
+            passenger.delete()
+
+
+
+    
