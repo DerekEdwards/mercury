@@ -30,24 +30,48 @@ def create_trips(passenger, second):
         end_buses = get_candidate_vehicles_from_point_radius(passenger.end_lat, passenger.end_lng)
     elif settings.USE_ISOCHRONE_SUBNET:
         # Get the busses for the passenger's starting subnet
-        start_buses = get_candidate_vehicles_from_point_geofence(passenger.start_lat, passenger.start_lng)
+        start_buses, start_walking_gw = get_candidate_vehicles_from_point_geofence(passenger.start_lat, passenger.start_lng)
         # Get the busses for the passenger's ending subnet
-        end_buses = get_candidate_vehicles_from_point_geofence(passenger.end_lat, passenger.end_lng)
+        end_buses, end_walking_gw = get_candidate_vehicles_from_point_geofence(passenger.end_lat, passenger.end_lng)
     else:
         return
 
     if not start_buses and not end_buses: #This is a fully static trip
-        if settings.CREATE_STATIC_TRIPS: #If we are tracking fully static trips, create the trip and store it in the db
-            create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 0, earliest_start_time = second)
-        else: #if we are not creating fully static trips, delete this passenger from consideration.
+        if not(settings.CREATE_STATIC_TRIPS) and not(start_walking_gw or end_walking_gw): #This is a fully static trip outside largest isochrone 
             passenger.delete()
+        elif not(start_walking_gw or end_walking_gw):#If we are tracking fully static trips, create the trip and store it in the db
+            create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 0, earliest_start_time = second)
+        else:
+            if(start_walking_gw and not end_walking_gw): #Start walking end FRT
+               create_walking_trip(passenger, [passenger.start_lat, passenger.start_lng], [start_walking_gw.lat, start_walking_gw.lng], trip_sequence = 0, earliest_start_time = second)
+               create_static_trip(passenger, [start_walking_gw.lat, start_walking_gw.lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 1)
+            if(not start_walking_gw and end_walking_gw): #Start FRT and end walking
+               create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [end_walking_gw.lat, end_walking_gw.lng], trip_sequence = 0, earliest_start_time = second)
+               create_walking_trip(passenger, [end_walking_gw.lat, end_walking_gw.lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 1)
+            if(start_walking_gw and end_walking_gw): #Start wakling, middle FRT, end Walking
+               create_walking_trip(passenger, [passenger.start_lat, passenger.start_lng], [start_walking_gw.lat, start_walking_gw.lng], trip_sequence = 0, earliest_start_time = second)
+               create_static_trip(passenger, [start_walking_gw.lat, start_walking_gw.lng], [end_walking_gw.lat, end_walking_gw.lng], trip_sequence = 1)
+               create_walking_trip(passenger, [end_walking_gw.lat, end_walking_gw.lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 2)
+            
         
     elif start_buses and (not end_buses): #The first leg is DRT, the rest of the trip is Static
         start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses = start_buses, end_buses = None)
-        create_static_trip(passenger, [start_bus.subnet.gateway.lat, start_bus.subnet.gateway.lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 1)
+        if not end_walking_gw:
+            create_static_trip(passenger, [start_bus.subnet.gateway.lat, start_bus.subnet.gateway.lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 1)
+        else:
+            create_static_trip(passenger, [start_bus.subnet.gateway.lat, start_bus.subnet.gateway.lng], [end_walking_gw.lat, end_walking_gw.lng], trip_sequence = 1)
+            create_walking_trip(passenger, [end_walking_gw.lat, end_walking_gw.lng], [passenger.end_lat, passenger.end_lng], trip_sequence = 2)
     elif (not start_buses) and end_buses: #The final leg is DRT, the first portion is Static
-        start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses = None, end_buses = end_buses)
-        create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [end_bus.subnet.gateway.lat, end_bus.subnet.gateway.lng], trip_sequence = 0, earliest_start_time = second)       
+        if not start_walking_gw:
+            start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses = None, end_buses = end_buses, sequence = 1)
+        else:
+            start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses = None, end_buses = end_buses, sequence = 2)
+        if not start_walking_gw:
+            create_static_trip(passenger, [passenger.start_lat, passenger.start_lng], [end_bus.subnet.gateway.lat, end_bus.subnet.gateway.lng], trip_sequence = 0, earliest_start_time = second)       
+        else:
+            create_walking_trip(passenger, [passenger.start_lat, passenger.start_lng], [start_walking_gw.lat, start_walking_gw.lng], trip_sequence = 0, earliest_start_time = second)       
+            create_static_trip(passenger, [start_walking_gw.lat, start_walking_gw.lng], [end_bus.subnet.gateway.lat, end_bus.subnet.gateway.lng], trip_sequence = 1, earliest_start_time = second)       
+            
     else: #Both legs are DRT.
         start_bus, end_bus = create_dynamic_trip(passenger, second, start_buses, end_buses)
         if not (start_bus == end_bus):
@@ -55,7 +79,7 @@ def create_trips(passenger, second):
     return
 
 @log_traceback
-def create_dynamic_trip(passenger, second, start_buses = None, end_buses = None):
+def create_dynamic_trip(passenger, second, start_buses = None, end_buses = None, sequence = None):
     """
     Creates DRT trips.
     @param passenger : passenger object 
@@ -86,7 +110,7 @@ def create_dynamic_trip(passenger, second, start_buses = None, end_buses = None)
         models.TripSegment.objects.create(passenger = passenger, flexbus = start_bus, start_lat = passenger.start_lat, end_lat = start_bus.subnet.gateway.lat, start_lng = passenger.start_lng, end_lng = start_bus.subnet.gateway.lng, status = 1, earliest_start_time = second, trip_sequence = 0)
     
     elif (not start_buses) and end_buses:
-        models.TripSegment.objects.create(passenger = passenger, flexbus = None, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = 1)
+        models.TripSegment.objects.create(passenger = passenger, flexbus = None, start_lat = end_bus.subnet.gateway.lat, end_lat = passenger.end_lat, start_lng = end_bus.subnet.gateway.lng, end_lng = passenger.end_lng, status = 1, trip_sequence = sequence)
 
     return start_bus, end_bus
 
@@ -105,6 +129,14 @@ def create_static_trip(passenger, start_loc, end_loc, trip_sequence, earliest_st
     static_trip.save()
     return
     
+@log_traceback
+def create_walking_trip(passenger, start_loc, end_loc, trip_sequence, earliest_start_time = None):
+    static_trip = models.TripSegment.objects.create(passenger = passenger, earliest_start_time = earliest_start_time, start_lat = start_loc[0], start_lng = start_loc[1], end_lat = end_loc[0], end_lng = end_loc[1], status = 1, trip_sequence = trip_sequence, static = 1, walking = 1)
+
+    static_trip.save()
+    return
+
+
 @log_traceback
 def insert_trip(second, trip_segment):
     """
@@ -128,6 +160,9 @@ def which_bus(busses, passenger, second, first_mile):
     min_time = float('inf');
     min_cost = float('inf');
 
+    print 'BUS COUNT:'
+    print len(busses)
+
     for bus in busses:
         if first_mile:
             trip_geographic_mean  = find_geographic_average([[passenger.start_lat, passenger.start_lng], [bus.subnet.gateway.lat, bus.subnet.gateway.lng]])
@@ -138,10 +173,13 @@ def which_bus(busses, passenger, second, first_mile):
         trips = models.TripSegment.objects.filter(flexbus = bus, end_time__gte = second, end_time__lt = 20000).order_by('-end_time')
         #If the bus has no trips, return this bus
         if trips.count() == 0:
+            print 'THIS IS THE BUS'
+            print bus.vehicle_id
             return bus
-
+        
         #find geographic average of this bus's future stops
-        stops = models.Stop.objects.filter(flexbus = bus, visit_time__gte = second)
+        stops = models.Stop.objects.filter(flexbus = bus, visit_time__gte = second).order_by('visit_time')
+    
         lat, lng, unused = get_flexbus_location(bus, second)
         points = [[lat,lng]]
         for stop in stops:
@@ -159,19 +197,35 @@ def which_bus(busses, passenger, second, first_mile):
         if cost < min_cost:
             min_cost = cost
             min_bus = bus
+            
 
         #Check to find the min time, this will be used to see if the system needs an ew vehicle
-        if (last_trip.end_time - second) < min_time:
-            min_time = last_trip.end_time - second
+        stops_count = stops.count()
+        if stops_count > 0:
+            last_stop = stops[stops_count - 1]
+         
+            if (last_stop.visit_time - second) < min_time:
+                min_time = last_stop.visit_time - second
+                print 'MIN TIME'
+                print '---------' + str(min_time)
+            else:
+                print '---------' + str(last_stop.visit_time - second)
+        else:
+            print 'MIN TIME'
+            print 0
+            min_time = 0
 
     #If no bus is scheduld to be done in 15 minutes
+    print 'MIN TIME IS:  ------------: ' + str(min_time)
     if min_time > 15*60:
         vehicles = models.FlexBus.objects.all()
         id = vehicles.count() + 1
         if len(busses) > 0:
             flexbus, created = models.FlexBus.objects.get_or_create(vehicle_id = id, subnet = bus.subnet)
         else: #TODO, this simply assigns the passenger to the subnet of the last bus in the queue, not necessariliy the best
-            flexbus, created = models.FlexBus.objects.get_or_create(vehicle_id = id, subnet = bus.subnet)
+            #Todo: This will only work with one subnet_under_study
+            subnet = models.Subnet.objects.get(active_in_study = True)
+            flexbus, created = models.FlexBus.objects.get_or_create(vehicle_id = id, subnet = subnet)
         return flexbus
     else:
         return min_bus
@@ -205,19 +259,30 @@ def get_candidate_vehicles_from_point_geofence(lat, lng):
     """
     subnets_in_range = []
     vehicles = []
+    walking_gateways = []
 
     subnets = models.Subnet.objects.filter(active_in_study = True)
     for subnet in subnets:
         within, reason = within_coverage_area(lat, lng, subnet)
         if within:
             subnets_in_range.append(subnet)
+        if reason == 4:
+            walking_gateways.append(subnet.gateway)
 
     for subnet in subnets_in_range:
         subnet_vehicles = subnet.flexbus_set.all()
         for sv in subnet_vehicles:
             vehicles.append(sv)
 
-    return vehicles
+    closest_gw = None
+    gw_dist = float('inf')
+    for gw in walking_gateways:
+        dist = utils.haversine_dist([lat,lng], [gw.lat,gw.lng])
+        if dist < gw_dist:
+            gw_dist = dist
+            closest_gw = gw
+
+    return vehicles, closest_gw
         
 
 @log_traceback
@@ -257,14 +322,7 @@ def within_coverage_area(lat, lng, subnet):
         if driving_time_from > subnet.max_driving_time:
             return False, 3
 
-    #3 Check that we are not within the walking distance
-    if settings.CHECK_WALKING_TIME:
-        sns = models.Subnet.objects.all()
-        for sn in sns:
-            walking_time = planner_manager.get_optimal_walking_time([lat,lng], [sn.gateway.lat, sn.gateway.lng])
-            if walking_time < subnet.max_walking_time:
-                return False, 4
-
+    
     #4 Check that this subnet's gateway is the closest gateway
     if settings.CHECK_OTHER_SUBNETS:
         subnets = models.Subnet.objects.all()
@@ -274,6 +332,38 @@ def within_coverage_area(lat, lng, subnet):
             geometry, distance, time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [sn.gateway.lat, sn.gateway.lng]) #TOLocation, FromLocation
             geometry, distance, time_from = planner_manager.get_optimal_vehicle_itinerary([sn.gateway.lat, sn.gateway.lng], [lat,lng]) #TOLocation, FromLocation
             if (time_to + time_from) < (driving_time_to + driving_time_from):
+                return False, 5
+
+    
+    #3 Check that we are not within the walking distance
+    if settings.CHECK_WALKING_TIME:
+        sns = models.Subnet.objects.all()
+        for sn in sns:
+            walking_time = planner_manager.get_optimal_walking_time([lat,lng], [sn.gateway.lat, sn.gateway.lng])
+            if walking_time < subnet.max_walking_time:
+                return False, 4
+    
+    
+    #Make sure that we are inside the donut
+    if settings.CHECK_RADIUS:
+        geographic_dist = utils.haversine_dist([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])#To,From
+        if geographic_dist > subnet.max_driving_time:
+            return False, 2
+
+        sns = models.Subnet.objects.all()
+        for sn in sns:
+            walking_dist = utils.haversine_dist([lat,lng], [sn.gateway.lat, sn.gateway.lng])
+            if walking_dist < subnet.max_walking_time:
+                return False, 4
+
+    #4 Check that this subnet's gateway is the closest gateway
+    if settings.CHECK_OTHER_SUBNETS_RADIUS:
+        subnets = models.Subnet.objects.all()
+        for sn in subnets:
+            if sn == subnet:
+                continue
+            sn_dist = utils.haversine_dist([sn.gateway.lat, sn.gateway.lng], [lat,lng]) #TOLocation, FromLocation
+            if sn_dist < geographic_dist:
                 return False, 5
 
     return True, None
@@ -351,7 +441,7 @@ def get_total_passenger_costs(stops, second, i, j):
     total_passenger_time = 0
     #TODO: Take into account the initial wait of the passenger.  Meaning if we drop the passenger of to catch a train, but it is 20 min until the next train, the optimizer should know that
     for stop in stops:
-        if stop.type == 2: #this is a dropoff
+        if stop.type == 2: #this is a dropoffs
             end_time = visit_times[index]
             total_time_for_trip = end_time - stop.trip.earliest_start_time 
             total_passenger_time += total_time_for_trip
@@ -533,8 +623,17 @@ def optimize_static_route(second, trip_segment):
     
     trip_time = datetime.datetime(year = settings.SIMULATION_START_YEAR, month = settings.SIMULATION_START_MONTH, day = settings.SIMULATION_START_DAY, hour = hours, minute = minutes, second = seconds)
     
-    walking_time, waiting_time, riding_time, initial_wait = planner_manager.get_optimal_transit_times([trip_segment.end_lat, trip_segment.end_lng], [trip_segment.start_lat, trip_segment.start_lng], trip_time)
+    if trip_segment.walking:
+        walking_time = planner_manager.get_optimal_walking_time([trip_segment.end_lat, trip_segment.end_lng], [trip_segment.start_lat, trip_segment.start_lng])
+        waiting_time = 0 
+        riding_time = 0
+        initial_wait = 0
+    else:
+        walking_time, waiting_time, riding_time, initial_wait = planner_manager.get_optimal_transit_times([trip_segment.end_lat, trip_segment.end_lng], [trip_segment.start_lat, trip_segment.start_lng], trip_time)
 
+    print walking_time
+    print waiting_time
+    print riding_time
     total_time = walking_time + waiting_time + riding_time
 
     trip_segment.status = 2
@@ -562,7 +661,17 @@ def simple_optimize_route(second, trip, flexbus):
     #If this trip is the final leg, it will not yet have a vehicle assigned.  Search for the optimal vehicle.
     #TODO:  This function will allow vehicles from other subnets to pickup the passenger even it the passenger is starting at a different Gateway
     if not flexbus:
-        buses = get_candidate_vehicles_from_point_geofence(trip.start_lat, trip.start_lng)
+        
+        buses, walking_gw = get_candidate_vehicles_from_point_geofence(trip.start_lat, trip.start_lng)
+        if len(buses) < 1:
+            #import pdb
+            #pdb.set_trace()
+            print 'here is your problem'
+            print str(trip.start_lat) + ',' + str(trip.start_lng)
+            print str(trip.end_lat) + ',' + str(trip.end_lng)
+            #temp solution
+            subnet = models.Subnet.objects.get(subnet_id = 8)
+            buses = models.FlexBus.objects.filter(subnet = subnet)
         flexbus = which_bus(buses, trip.passenger, second, False)
         trip.flexbus = flexbus
         trip.save()

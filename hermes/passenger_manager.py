@@ -31,7 +31,6 @@ def get_survey_passengers(request):
     """
     simulation_code = int(request.POST['simulation_code'])
     second = int(request.POST['second'])
-
     SystemFlags = models.SystemFlags.objects.all()
     SystemFlags = SystemFlags[0]
     SystemFlags.second = second
@@ -53,7 +52,7 @@ def get_survey_passengers(request):
             ## Create Trips for these passengers
             ###########################
             views.create_trips(new_passenger, second)
-            
+
             ##############
             ##This has been moved from script
             ##############
@@ -78,8 +77,6 @@ def get_survey_passengers(request):
                 else:
                     flexbus, stop_array = views.insert_trip(second, trip)
         ##############
-
-
 
         if not ready:
             second += 1

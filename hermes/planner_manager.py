@@ -29,7 +29,7 @@ def get_optimal_walking_time(toLocation, fromLocation):
         error = json_response['error']
         msg = error['msg']
         if 'Origin is within a trivial distance of the destination.' in msg:
-            return 1,0,0 #This is a very short walking trip
+            return 1#This is a very short walking trip
         elif 'Your start or end point might not be safely accessible' in msg:
             #In OTP, if a trip starts or ends in the middle of a highway or some inaccessible place, the above error is thrown.  To get around this.  I will slightly adjust the start and end location by a couple of hundred feet, until a safe route is found.
             print 'Adjusting Start/End Location to make trip safer'
@@ -129,7 +129,7 @@ def get_optimal_vehicle_itinerary(toLocation, fromLocation):
     total_time = json_response['route_summary']['total_time']
 
     #Added 80% to vehicle times.  These times returned by OSRM are optimistic.  This puts the number more in line with Google Maps results
-    return route_geometry, total_distance, total_time*1.8
+    return route_geometry, total_distance, total_time*1.65
 
 @log_traceback
 def decode_line(encoded):

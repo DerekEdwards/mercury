@@ -12,7 +12,7 @@ MANAGERS = ADMINS
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql', # Add 'postgresql_psycopg2', 'mysql', 'sqlite3' or 'oracle'.
-        'NAME': 'NITS',                      # Or path to database file if using sqlite3.
+        'NAME': 'temp',                      # Or path to database file if using sqlite3.
         'USER': 'root',                      # Not used with sqlite3.
         'PASSWORD': 'pword',                  # Not used with sqlite3.
         'HOST': '',                      # Set to empty string for localhost. Not used with sqlite3.
@@ -157,10 +157,10 @@ LOGGING = {
 #Below is a list of configurables for the project
 ###Todo: Move these to a separate configurations file
 ALPHA = 4.4/1609.34 #Weight associated with VMT in cost function
-BETA = 8.92/3600 #Weight associated with Passenger costs in cost function
+BETA = 11.4/3600 #Weight associated with Passenger costs in cost function
 
 #Fitness Values
-PASSENGER_VOT = 8.92/3600 #Passenger Value of Time $perhour/seconds in hour
+PASSENGER_VOT = 11.4/3600 #Passenger Value of Time $perhour/seconds in hour
 FRT_CPM = 9.6/1609.34 #FRT Cost Per Mile $ divided by meters in a mile
 DRT_CPM = 4.4/1609.34 #DRT Cost Per Miles $ divided by meters in a mile
 
@@ -174,9 +174,17 @@ CREATE_STATIC_TRIPS = False #used in views.py.  If we are debugging and don't to
 
 #These four variables are used in views.within_coverage_areas
 CHECK_GEOFENCING = True #We look at the fenceposts for the subnet
-CHECK_DRIVING_TIME = True #We look at the max driving time for the subnet
-CHECK_WALKING_TIME = True #We look at the max walking time for the subnet
-CHECK_OTHER_SUBNETS = True # We look to see if other subnets are closer with respect to driving time
+
+#Isochrones
+CHECK_DRIVING_TIME = False #We look at the max driving time for the subnet
+CHECK_WALKING_TIME = False #We look at the max walking time for the subnet
+CHECK_OTHER_SUBNETS = False # We look to see if other subnets are closer with respect to driving time
+
+#Radius Based
+CHECK_RADIUS = True
+CHECK_OTHER_SUBNETS_RADIUS = True
+
+
 
 DEFAULT_MAX_DRIVING_TIME = 120 #seconds
 DEFAULT_MAX_WALKING_TIME = 0 #seconds
@@ -184,7 +192,7 @@ DEFAULT_MAX_WALKING_TIME = 0 #seconds
 OTP_SERVER_URL = 'http://localhost:8080/'
 OSRM_SERVER_URL = 'http://localhost:8001/'
 SIMULATION_START_TIME = 11*3600 #seconds into the day
-SIMULATION_START_DAY = 14
+SIMULATION_START_DAY = 18
 SIMULATION_START_MONTH = 3
 SIMULATION_START_YEAR = 2013
 USE_ISOCHRONE_SUBNET = True
@@ -193,3 +201,6 @@ USE_CIRCULAR_SUBNET = False
 CIRCULAR_SUBNET_RADIUS = 1000 #meters
 
 SIMULATION_LENGTH = 3600*3 #seconds
+
+MANUAL_PSO_INITIALIZATION = False
+USE_PSO = True

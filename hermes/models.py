@@ -8,6 +8,8 @@ class SystemFlags(models.Model):
     simulation_set = models.IntegerField(null = True)
     #there is a need for a global seconds definition
     second = models.IntegerField(null = False, default = 0)
+    saving_data = models.BooleanField(null = False, default = False)
+
     
 class SimulationResults(models.Model):
     """
@@ -200,6 +202,7 @@ class TripSegment(models.Model):
     passenger = models.ForeignKey(Passenger, null = False)
 
     static = models.BooleanField(null = False, default = False)
+    walking = models.BooleanField(null = False, default = False)
     flexbus = models.ForeignKey(FlexBus, null = True)
 
     start_time = models.IntegerField(null = True)
@@ -322,12 +325,17 @@ class Particle(models.Model):
     simulation_set = models.IntegerField(null = False)
     simulation_code = models.IntegerField(null = False)
     step = models.IntegerField(null = False, default = 0)
+
     cost = models.FloatField(null = True)
-    best_cost = models.FloatField(null = True)
     x1 = models.FloatField(null = False)
     x2 = models.FloatField(null = False)
     v1 = models.FloatField(null = False, default = 0.0)
     v2 = models.FloatField(null = False, default = 0.0)
+
+    best_cost = models.FloatField(null = True)
+    best_x1 = models.FloatField(null = False)
+    best_x2 = models.FloatField(null = False)
+   
 
 
 class SimulationResult(models.Model):
@@ -356,10 +364,15 @@ class SimulationResult(models.Model):
     started_trips = models.IntegerField(null = False)
     completed_trips = models.IntegerField(null = False)
     DRT_time_avg = models.FloatField(null = False) #measured in seconds
+    DRT_walking_total = models.FloatField(null = False) #measured in seconds
+    FRT_walking_total =  models.FloatField(null = False) #measured in sconds
+
     FRT_time_avg = models.FloatField(null = False) #measured in seconds
     average_distance = models.FloatField(null = False) #measured in meters
     total_DRT_VMT  = models.FloatField(null = False) #measured in meters
+    total_DRT_cost = models.FloatField(null = False) #measured in $$$
     total_FRT_VMT_saved = models.FloatField(null = False) #measured in meters
     total_DRT_vehicles_used = models.IntegerField(null = False)
+
 
     total_net_cost = models.FloatField(null = False)

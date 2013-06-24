@@ -12,11 +12,13 @@ in the Python views.
 //Global Variables
 //TODO: identify which of these can be moved to a central confiuration file
 var seconds = 0; //The number of seconds into the simulation.
-var master_interval;
+var master_interval = false;
 var INITIALIZING = true;
 var GEN_PASSENGERS = false; //If true, we are waiting for Python to return from Generating Passengers
 var READY_TO_INS_TRIPS = false; //If true, we have finished generating passengers and are ready to insert trips into the system
 var INS_TRIPS = false; //If true, we are waiting for Python to return from inserting trips into the system
+var SAVE_DATA = false; //if ture, we are saving data
+var WAITING_FOR_SAVE = false;
 var simulation_code; //Each simulation gets a unique simulation code
 var simulation_length; //How long the simulation will be run in seconds
 var passengers_per_second = .05; //For random passenger generation mode, this is the rate that passengers are make trip requests
@@ -28,7 +30,7 @@ This function deletes the old bus, gateway, and passenger data from previous sim
 */
 function initialize_simulation_data(){
     var html_data = $('#infoWindow').html(); 
-    $('#infoWindow').html(html_data + '<br>Clearing Old Data...');
+    $('#infoWindow').html('Clearing Old Data...<br>' + html_data);
     $.ajaxSetup({async:false});
     $.post('/initialize_simulation_data/',
 	   function(data){
@@ -37,10 +39,11 @@ function initialize_simulation_data(){
 	       INITIALIZING = false;
 	       html_data = $('#infoWindow').html();
 	       simulation_length = +message['simulation_length'];
-	       $('#infoWindow').html(html_data + '<br>Finished Clearing Old Data, simulation code is: ' + message.simulation_code);
+	       $('#infoWindow').html('Finished Clearing Old Data, simulation code is: ' + message.simulation_code + '<br>' + html_data);
 	       }
 	  );
 }
+
 
 /*generate_passengers
 This function takes returns a set of passengers requesting trips at a particular second in the simulation
@@ -92,7 +95,7 @@ function insert_trips(trip_id){
     var trip_ids;
     trip_ids = JSON.stringify(trip_id);
     console.log(trip_ids);
-    $('#infoWindow').html(html_data + '<br>Current Time is ' + seconds + ' seconds.');   
+    $('#infoWindow').html('Current Time is ' + seconds + ' seconds.<br>' + html_data);   
     console.log('Inserting trips at time ' + seconds);
     $.ajaxSetup({async:true});
     $.post('/insert_trip/', {"second":seconds, "trip_ids":trip_ids},
@@ -108,21 +111,53 @@ function insert_trips(trip_id){
 After the simulation is done, dump the database.
 */
 function save_data(){
+
+    if(WAITING_FOR_SAVE){
+	save_data_status();
+    }
+    else{
+	WAITING_FOR_SAVE = true;
+    $.ajaxSetup({async:true});
     $.post('/save_data/', {},
 	   function(data){
 	       var message = $.parseJSON(data);
 	       result = message['result'];
 	       if(result){
-		   initialize();
-	       }
-	       else{
-		   alert('All simulations are over!');
+		   console.log('Done without a timeout');
 	       }
 	   }
 	  );
     return;
-
+    }
 }
+
+/*save_data
+After calling save data, sometimes the connection resets.  This checks to see if saving data is finished and kicks off the next iteration.
+*/
+function save_data_status(){
+
+
+    WAITING_FOR_SAVE = true;
+    $.ajaxSetup({async:true});
+    $.get('/save_data_status/', {simulation_code:simulation_code},
+	   function(data){
+	       var message = $.parseJSON(data);
+	       result = message['result'];
+	       if(result){
+		   SAVE_DATA = false;
+		   WAITING_FOR_SAVE = false;
+		   initialize();
+	       }
+	       else{
+		   console.log('Still waiting for data to be saved. STATUS: FALSE');
+	       }
+	   }
+	  );
+    return;
+    
+}
+
+
 
 /*master
 This the main state machine controller for the NITS simulator.  Eventually this can be used to provide more indepth control to the end user. (Such as stopping/starting the simulation on command.)  A state machine type of system is used to get around the asynchronous nature of javascript/http calls  
@@ -139,19 +174,23 @@ function master(){
     console.log('GEN_PASSENGERS:  ' + GEN_PASSENGERS);
     console.log('READY_TO_INS_TRIPS:  ' + READY_TO_INS_TRIPS);
     console.log('INS_TRIPS:  ' + INS_TRIPS);
+    console.log('SAVE_DATA:  ' + SAVE_DATA);
 
     var last_time = false;
-    if (seconds > simulation_length){
+    if (seconds > simulation_length && SAVE_DATA == false){
 	last_time = true;
-	clearInterval(master_interval);
+	
 	var html_data = $('#infoWindow').html(); 
-	$('#infoWindow').html(html_data + '<br>This is the last time that the script will run.  The simulation is over...');  
-	save_data(); 
+	$('#infoWindow').html('This is the last time that the script will run.  The simulation is over...<br>' + html_data);  
+	SAVE_DATA = true;
     }
 
     if(GEN_PASSENGERS) 
 	console.log('Generating passengers...waiting...');
     else{
+	if(SAVE_DATA){
+	    save_data(); }
+	else{
 	if(READY_TO_INS_TRIPS){
 	    READY_TO_INS_TRIPS = false;
 	    insert_trips(ready_trips);
@@ -165,7 +204,7 @@ function master(){
 		console.log('done inserting trips.  Ready to move on to the next second');
 		if(last_time){
 		   var html_data = $('#infoWindow').html(); 
-		    $('#infoWindow').html(html_data + '<br>Saving the data!<br><b>');  
+		    $('#infoWindow').html('Saving the data!<br>' + html_data);  
                    console.log('these passengers will never be inserted');
 		    
 		}
@@ -174,6 +213,7 @@ function master(){
 		}
 	    }
    
+	}
 	}
     }
 }
@@ -187,12 +227,14 @@ and the next line sets an interval that checks the state every 100 milliseconds 
 function initialize(){
     seconds = 0;
     INITIALIZING = true;
+    SAVE_DATA = false;
     GEN_PASSENGERS = false; //If true, we are waiting for Python to return from Generating Passengers
     READY_TO_INS_TRIPS = false; //If true, we have finished generating passengers and are ready to insert trips into the system
     INS_TRIPS = false; //If true, we are waiting for Python to return from inserting trips into the system
     
     initialize_simulation_data();
-    master_interval = setInterval(function(){master()},1000);
+    if(master_interval == false){
+	master_interval = setInterval(function(){master()},1000);}
 }
 
 

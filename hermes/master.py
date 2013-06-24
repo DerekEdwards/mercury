@@ -4,7 +4,7 @@ from extra_utils.variety_utils import log_traceback
 
 from NITS_CODE import settings
 from hermes import models, passenger_manager
-from hermes import load_gateways
+from hermes import load_gateways, particle_swarm_manager
 
 
 @log_traceback
@@ -13,6 +13,7 @@ def clear_data():
     This function is called to clear survey_passenger data, passengers_in_transit, all trips, stops, vehicles and gateways from the db.
     The difference between survey_passengers and passengers is that survey passengers represent only the start, end, and trip time for passengers collected from asurvey.  The passenger field is created for passengers after they have made a request.
     """
+     
     if settings.DELETE_SURVEY_PASSENGERS:
         survey_passengers = models.SurveyPassenger.objects.all()
         survey_passengers.delete()
@@ -53,9 +54,12 @@ def create_subnets():
             subnet.max_driving_time = settings.DEFAULT_MAX_DRIVING_TIME
             subnet.max_walking_time = settings.DEFAULT_MAX_WALKING_TIME
         
+        #8 is midtown, 21 is chamblee
         if subnet.subnet_id == 8:
             subnet.active_in_study = True
-
+            particle = particle_swarm_manager.get_current_particle()
+            subnet.max_driving_time = particle.x1
+            subnet.max_walking_time = particle.x2
         subnet.radius = 2
         subnet.save()
         
@@ -68,7 +72,7 @@ def create_busses():
     subnets = models.Subnet.objects.filter(active_in_study = True)
     id = 1
     for subnet in subnets:
-        for i in range(4):
+        for i in range(1):
             flexbus, created = models.FlexBus.objects.get_or_create(vehicle_id = id, subnet = subnet)
             id += 1
 
@@ -79,8 +83,23 @@ def initialize_simulation(request):
     This simulation code is also updated here.
     TODO:  This function could use some GUI action.  Settings like which subnets are active, which gateways to use, size of the iscrhones etc. should be set via gui
     """
+    #Update the simulation code
+    SystemFlags = models.SystemFlags.objects.all()
+    SystemFlags = SystemFlags[0]
+    simulation_code = SystemFlags.simulation_code
+    simulation_code += 1
+    SystemFlags.simulation_code = simulation_code
+    SystemFlags.saving_data = False
+    SystemFlags.second = 0
+    SystemFlags.save()
+
     print 'Clearing Data...'
     clear_data()
+
+    if settings.USE_PSO:
+        print 'Initializing Particles'
+        #particle_swarm_manager.initialize_particles()
+
     print 'Creating Gateways...'
     #create_gateways()
     print 'Creating Subnets...'
@@ -93,14 +112,8 @@ def initialize_simulation(request):
         print 'Done loading survey passengers' 
         if settings.PRESCREEN_PASSENGERS: 
             passenger_manager.prescreen_passengers()
-    #Update the simulation code
-    SystemFlags = models.SystemFlags.objects.all()
-    SystemFlags = SystemFlags[0]
-    simulation_code = SystemFlags.simulation_code
-    simulation_code += 1
-    SystemFlags.simulation_code = simulation_code
-    SystemFlags.second = 0
-    SystemFlags.save()
+
+    
     json_str = simplejson.dumps({"simulation_code":simulation_code, "simulation_length":settings.SIMULATION_LENGTH})
     return HttpResponse(json_str)
 
