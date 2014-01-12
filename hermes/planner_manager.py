@@ -57,6 +57,7 @@ def get_optimal_transit_times(toLocation, fromLocation, requestTime=None, attemp
 
     if not requestTime:
         requestTime = datetime.datetime.now()
+    print requestTime
     hour = str(requestTime.hour)
     minute = str(requestTime.minute)
     second = str(requestTime.second)
@@ -75,9 +76,16 @@ def get_optimal_transit_times(toLocation, fromLocation, requestTime=None, attemp
         duration = itinerary['duration']
         startTime = itinerary['startTime']
         endTime = itinerary['endTime']
-        
+          
         #wait time from OTP does not include the initial wait, add this
+        print startTime/1000
+        
         initialWait = startTime/1000 - time.mktime(requestTime.timetuple())
+        #TODO:  Sometimes the initial wait is calucated as something like 21 hours.  Setting a max of 1 hour initial wait.  This needs  permanent solution.
+        initialWait = min(initialWait, 3600)
+        print initialWait
+        print 'asdfasdf'
+        print time.mktime(requestTime.timetuple())
 
         waitingTime = itinerary['waitingTime']
         realWait = int(waitingTime + initialWait)

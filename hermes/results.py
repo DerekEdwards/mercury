@@ -89,10 +89,10 @@ def get_survey_colors(request):
     passengers = passengers[pmin:pmax]
     subnets = models.Subnet.objects.all()
 
-    starts = []
-    start_colors = []
-    ends  = []
-    end_colors = []
+    starts = [[0,0]]
+    start_colors = [5]
+    ends  = [[0,0]]
+    end_colors = [5]
 
     index = 0
     for passenger in passengers:
@@ -108,8 +108,10 @@ def get_survey_colors(request):
             if (time_to + time_from) < min_distance:
                 min_distance = (time_to + time_from)
                 closest_subnet = sn
-        starts.append([passenger.start_lat, passenger.start_lng])
-        start_colors.append(closest_subnet.subnet_id)
+
+        if min_distance < 600:
+            starts.append([passenger.start_lat, passenger.start_lng])
+            start_colors.append(closest_subnet.subnet_id)
 
 
         closest_subnet = None
@@ -120,8 +122,11 @@ def get_survey_colors(request):
             if (time_to + time_from) < min_distance:
                 min_distance = (time_to + time_from)
                 closest_subnet = sn
-        ends.append([passenger.end_lat, passenger.end_lng])
-        end_colors.append(closest_subnet.subnet_id)
+        
+        print min_distance
+        if min_distance < 600:
+            ends.append([passenger.end_lat, passenger.end_lng])
+            end_colors.append(closest_subnet.subnet_id)
 
     json_str = simplejson.dumps({"starts":starts, "ends":ends, "start_colors":start_colors, "end_colors":end_colors})
     return HttpResponse(json_str)
@@ -201,6 +206,7 @@ def get_passenger_details():
         print str(passenger.end_lat) + ',' + str(passenger.end_lng)
         print hwalk, hwait, hride
         print passenger_total_time, trips[0].earliest_start_time - trips[0].end_time, trips[0].walking
+        print trips[0].id
         
         print '&&&&&'
         if (hwalk + hwait + hride == False):
@@ -390,16 +396,16 @@ def save_data(request):
         SystemFlags.saving_data = True 
         SystemFlags.save()
         
-    gw = models.Gateway.objects.get(gateway_id = 8)
+    gw = models.Gateway.objects.get(gateway_id = 21)
     subnet = models.Subnet.objects.get(gateway = gw)
     time = datetime.datetime.now()
     total_passengers = models.Passenger.objects.all()
 
-    description = 'RADIUS2_SMPL_MTOWN_W3_WEEKDAY_d_' + str(subnet.max_driving_time) + "_w_" + str(subnet.max_walking_time) + '_' + str(time.date()) + '-' + str(time.time()) 
+    description = 'ISO_ALLFIXINS_DORAVILLE_W3_SUNDAY_d_' + str(subnet.max_driving_time) + "_w_" + str(subnet.max_walking_time) + '_' + str(time.date()) + '-' + str(time.time()) 
 
     ###Dump the DB
     target_dir = '/home/derek/Code/results/'
-    os.system("mysqldump -uroot -ppword temp > " + target_dir + description + ".sql")    
+    os.system("mysqldump -uroot -ppword EXTRA_NITS > " + target_dir + description + ".sql")    
     print 'db dumped'
     ###Create a SimulationResult entry
     #Meta Data
@@ -423,7 +429,7 @@ def save_data(request):
     #Vehicle Data
     print 'getting vehicle data'
     VMT, vehicle_count, vehicle_avg_VMT, total_vehicle_cost = get_flexbus_details()
-    FRT_VMT, trips_served = static_vmt_within_zone(5) #get static vehicle details for service id 5
+    FRT_VMT, trips_served = static_vmt_within_zone(4) #get static vehicle details for service id 5
     sim_results.total_DRT_VMT  = VMT
     sim_results.total_FRT_VMT_saved = FRT_VMT
     sim_results.total_DRT_vehicles_used = vehicle_count 
@@ -527,7 +533,7 @@ def passengers_per_subnet(subnet_id):
 
 
 @log_traceback
-def static_vmt_within_zone(service_id = 5):
+def static_vmt_within_zone(service_id = 4):
     subnets = models.Subnet.objects.filter(active_in_study = True)
 
     start_time = settings.SIMULATION_START_TIME
@@ -600,6 +606,37 @@ def static_vmt_within_zone(service_id = 5):
     print trips_served
 
     return total_vmt*6, trips_served*6
+
+@log_traceback
+def output_simulationresults():
+    "Read through the simulation result table and create a csv"
+
+    import csv
+    
+    min_id = 0
+    max_id = 1000
+    csvWriter = open('simulation_result.csv', 'w')
+
+    results = models.SimulationResult.objects.filter(id__gte = min_id, id__lte = max_id)
+
+    
+    csvWriter.write("Description, x1, x2, Timestamp, Simulation Code, Simulation Set, started trips, completed trips, DRT_Time_avg, drt_walking_total, frt_walking_total, frt_time_avg, avg_distance, total_drt_vmt, total_drt_cost, total_frt_vmt_saved, total_drt_vehicles_used, total_net_cost")
+    csvWriter.write('\n')
+    for result in results:
+        ###Parse description to get x1 and x2
+        desc = result.description
+        x1_starts = desc.find('_d_')
+        x2_starts = desc.find('_w_')
+        x1 = desc[x1_starts+3:x2_starts]
+        x2 = desc[x2_starts+3:]
+        x2_ends = x2.find('_')
+        x2 = x2[:x2_ends]
+        
+        csvWriter.write(str(result.description) + ',' + x1 + ',' + x2 + ',' + str(result.timestamp) + ',' + str(result.simulation_code) + ',' + str(result.simulation_set) + ',' + str(result.started_trips) + ',' + str(result.completed_trips) + ',' + str(result.DRT_time_avg) + ',' + str(result.DRT_walking_total) + ',' + str(result.FRT_walking_total) + ',' + str(result.FRT_time_avg) + ',' + str(result.average_distance) + ',' + str(result.total_DRT_VMT) + ',' + str(result.total_DRT_cost) + ',' + str(result.total_FRT_VMT_saved) + ',' + str(result.total_DRT_vehicles_used) + ',' + str(result.total_net_cost)) 
+        csvWriter.write('\n')
+    csvWriter.close()
+
+    
 
 @log_traceback
 def headway_output():

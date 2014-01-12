@@ -9,6 +9,30 @@ from NITS_CODE import settings
 from hermes import models, views, planner_manager, utils
 
 @log_traceback
+def crop_passengers_to_active_subnet():
+   """
+   Temporary function that should be expanded.  It should dlete passengers that do not begin or near closest to a subnet under study
+   """
+   passengers = models.SurveyPassenger.objects.all()
+   subnet = models.Subnet.objects.get(active_in_study = True)
+  
+   print passengers.count()
+
+   idx = 0
+   for p in passengers:
+     print idx
+     idx += 1
+     start_within, reason1 = views.within_coverage_area(p.start_lat, p.start_lng, subnet)
+     end_within, reason2 = views.within_coverage_area(p.end_lat, p.end_lng, subnet)
+     if not(start_within or end_within) and (reason1 == 5) and (reason2 == 5):
+       print reason1
+       p.delete()
+
+   passengers = models.SurveyPassenger.objects.all()
+   print passengers.count()
+
+
+@log_traceback
 def get_passengers(request):
     """
     Get Passengers finds passengers that are available at the current second.  The second is encapsulated in the request

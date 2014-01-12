@@ -42,19 +42,26 @@
 	       for (var i = 0; i < starts.length; i++) {
           	  
 	           start_color = +start_colors[i] % 7;
+	
+		   greenIcon.image = "/site_media/PassengerIcons/" + start_color +".png";
+	           greenIcon.iconSize = new GSize(12,12);		   
+		   greenIcon.shadowSize = new GSize(0,0);		   
+		                     
+		   var greenMarkerOptions = { icon:greenIcon, anchor:(.5,.5) };
+		   			   
+                   map.addOverlay(new GMarker(new GLatLng(starts[i][0], starts[i][1]),greenMarkerOptions));				   
+		   
+	       }
+
+	       for (var i = 0; i < ends.length; i++) {
+          	  
 		   end_color = +end_colors[i] % 7;
 
-		   greenIcon.image = "/site_media/PassengerIcons/" + start_color +".png";
 	           redIcon.image = "/site_media/PassengerIcons/" + end_color + ".png";
-		   greenIcon.iconSize = new GSize(8,8);		   
-		   redIcon.iconSize = new GSize(8,8);		   
-                   greenIcon.shadowSize = new GSize(0,0);		   
+		   redIcon.iconSize = new GSize(12,12);		   
 		   redIcon.shadowSize = new GSize(0,0);		   
                   
-		   var greenMarkerOptions = { icon:greenIcon };
-		   var redMarkerOptions = { icon:redIcon };
-			   
-                   map.addOverlay(new GMarker(new GLatLng(starts[i][0], starts[i][1]),greenMarkerOptions));				   
+		   var redMarkerOptions = { icon:redIcon, anchor:(.5,.5) };
 		   map.addOverlay(new GMarker(new GLatLng(ends[i][0], ends[i][1]), redMarkerOptions));				   
 
 	       }

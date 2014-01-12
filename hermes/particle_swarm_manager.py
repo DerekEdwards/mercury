@@ -6,7 +6,7 @@ from NITS_CODE import settings
 from hermes import models
 
 @log_traceback
-def initialize_particles(count = 8, max_x1 = 900, min_x1 =0, max_x2 = 1500, min_x2 = 0):
+def initialize_particles(count = 8, max_x1 = 2000, min_x1 =0, max_x2 = 3000, min_x2 = 0):
     """
     Initialize a set of particles for finding the optimial isochrone size
     @input count : the number of particles
@@ -111,6 +111,8 @@ def update_particle(particle, cost):
         x1 = 0
     if x2 < 0:
         x2 = 0
+    if settings.CHECK_RADIUS and (x1 < x2):
+        x1 = x2
 
     particle.x1 = x1
     particle.x2 = x2

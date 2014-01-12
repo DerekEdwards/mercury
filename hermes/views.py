@@ -217,7 +217,7 @@ def which_bus(busses, passenger, second, first_mile):
 
     #If no bus is scheduld to be done in 15 minutes
     print 'MIN TIME IS:  ------------: ' + str(min_time)
-    if min_time > 15*60:
+    if min_time > 20*60: #This is where the min time is found
         vehicles = models.FlexBus.objects.all()
         id = vehicles.count() + 1
         if len(busses) > 0:
@@ -305,25 +305,27 @@ def within_coverage_area(lat, lng, subnet):
     #1 Check that we are within the larger geofence, this technically is not needed since we are double-checking the isochrone boundary in the next
     # test, but this is done bcause it is a very fast way to weed out illegal points without needing to do a static trip.  Also, if we are only 
     # concerned about the shape and not the driving time, this will still allow us to do that.
-    if settings.CHECK_GEOFENCING:
-        gw = subnet.gateway
-        sides = models.FencePost.objects.filter(gateway = gw)
-        if not point_within_geofence(lat,lng,sides):
-            return False, 1
+    # if settings.CHECK_GEOFENCING:
+    #     gw = subnet.gateway
+    #     sides = models.FencePost.objects.filter(gateway = gw)
+    #     if not point_within_geofence(lat,lng,sides):
+    #         return False, 1
 
 
     #2 Check that we are not in a pocket, i.e. an area within the geofence but still beyond the maximum driving distance
     if settings.CHECK_DRIVING_TIME:
         geometry, distance, driving_time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])#To,From
-        if driving_time_to > subnet.max_driving_time:
-            return False, 2
+        ###if driving_time_to > subnet.max_driving_time:
+        ###    return False, 2
 
         geometry, distance, driving_time_from = planner_manager.get_optimal_vehicle_itinerary([subnet.gateway.lat, subnet.gateway.lng], [lat,lng])#To,From
-        if driving_time_from > subnet.max_driving_time:
-            return False, 3
+        ###if driving_time_from > subnet.max_driving_time:
+        ###    return False, 3
 
-    
     #4 Check that this subnet's gateway is the closest gateway
+    #geometry, distance, driving_time_to = planner_manager.get_optimal_vehicle_itinerary([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])#DLE DELETE ME
+    #geometry, distance, driving_time_from = planner_manager.get_optimal_vehicle_itinerary([subnet.gateway.lat, subnet.gateway.lng], [lat,lng])#To,From
+
     if settings.CHECK_OTHER_SUBNETS:
         subnets = models.Subnet.objects.all()
         for sn in subnets:
@@ -336,25 +338,27 @@ def within_coverage_area(lat, lng, subnet):
 
     
     #3 Check that we are not within the walking distance
+   
     if settings.CHECK_WALKING_TIME:
         sns = models.Subnet.objects.all()
         for sn in sns:
             walking_time = planner_manager.get_optimal_walking_time([lat,lng], [sn.gateway.lat, sn.gateway.lng])
-            if walking_time < subnet.max_walking_time:
-                return False, 4
-    
+            ###if walking_time < subnet.max_walking_time:
+            ###    return False, 4
+   
     
     #Make sure that we are inside the donut
+    
     if settings.CHECK_RADIUS:
         geographic_dist = utils.haversine_dist([lat,lng], [subnet.gateway.lat, subnet.gateway.lng])#To,From
-        if geographic_dist > subnet.max_driving_time:
-            return False, 2
+        ###if geographic_dist > subnet.max_driving_time:
+        ###    return False, 2
 
         sns = models.Subnet.objects.all()
         for sn in sns:
             walking_dist = utils.haversine_dist([lat,lng], [sn.gateway.lat, sn.gateway.lng])
-            if walking_dist < subnet.max_walking_time:
-                return False, 4
+            ###if walking_dist < subnet.max_walking_time:
+            ###    return False, 4
 
     #4 Check that this subnet's gateway is the closest gateway
     if settings.CHECK_OTHER_SUBNETS_RADIUS:
@@ -670,7 +674,7 @@ def simple_optimize_route(second, trip, flexbus):
             print str(trip.start_lat) + ',' + str(trip.start_lng)
             print str(trip.end_lat) + ',' + str(trip.end_lng)
             #temp solution
-            subnet = models.Subnet.objects.get(subnet_id = 8)
+            subnet = models.Subnet.objects.get(subnet_id = 21)
             buses = models.FlexBus.objects.filter(subnet = subnet)
         flexbus = which_bus(buses, trip.passenger, second, False)
         trip.flexbus = flexbus

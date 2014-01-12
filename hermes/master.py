@@ -25,8 +25,8 @@ def clear_data():
     stops.delete()
     vehicles = models.FlexBus.objects.all()
     vehicles.delete()
-    #gateways = models.Gateway.objects.all()
-    #gateways.delete()
+    gateways = models.Gateway.objects.all()
+    gateways.delete()
 
 @log_traceback
 def create_gateways():
@@ -54,8 +54,8 @@ def create_subnets():
             subnet.max_driving_time = settings.DEFAULT_MAX_DRIVING_TIME
             subnet.max_walking_time = settings.DEFAULT_MAX_WALKING_TIME
         
-        #8 is midtown, 21 is chamblee
-        if subnet.subnet_id == 8:
+        #8 is midtown, 21 is chamblee, 20 is doraville
+        if subnet.subnet_id == 20:
             subnet.active_in_study = True
             particle = particle_swarm_manager.get_current_particle()
             subnet.max_driving_time = particle.x1
@@ -101,7 +101,7 @@ def initialize_simulation(request):
         #particle_swarm_manager.initialize_particles()
 
     print 'Creating Gateways...'
-    #create_gateways()
+    create_gateways()
     print 'Creating Subnets...'
     create_subnets()
     print 'Creating Busses...'
